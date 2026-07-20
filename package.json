@@ -12,6 +12,8 @@
     "build": "npm run build -w @localocr/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:all": "npm run test && npm run build && node scripts/check-asset-size.mjs",
+    "check:assets": "node scripts/check-asset-size.mjs",
     "preview": "npm run preview -w @localocr/web"
   },
   "engines": {

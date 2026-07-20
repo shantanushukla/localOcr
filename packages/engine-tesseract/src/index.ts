@@ -6,20 +6,14 @@ import type {
   OcrPageResult,
 } from '@localocr/ocr-core';
 import { createWorker, type Worker } from 'tesseract.js';
+import { tesseractBboxToOurs, tesseractConfidence } from './bbox.js';
 
-function tesseractBboxToOurs(b: { x0: number; y0: number; x1: number; y1: number }) {
-  return {
-    x: b.x0,
-    y: b.y0,
-    w: Math.max(0, b.x1 - b.x0),
-    h: Math.max(0, b.y1 - b.y0),
-  };
-}
+export { tesseractBboxToOurs, tesseractConfidence } from './bbox.js';
 
 export class TesseractEngine implements OcrEngine {
   readonly id = 'tesseract.js';
   readonly capabilities = {
-    languages: ['eng', 'osd'], // extended at runtime via lang packs
+    languages: ['eng', 'osd'],
     webgpu: false,
     bboxes: true,
     confidence: true,
@@ -35,7 +29,6 @@ export class TesseractEngine implements OcrEngine {
       return;
     }
     this.worker = await createWorker(this.language, 1, {
-      // CDN defaults work; override via workerPath if self-hosting
       logger: () => {},
     });
   }
@@ -49,44 +42,56 @@ export class TesseractEngine implements OcrEngine {
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    const image = input.image as Parameters<Worker['recognize']>[0];
-    const { data } = await worker.recognize(image, undefined, {
-      text: true,
-      blocks: true,
-    });
+    const onAbort = () => {
+      /* tesseract.js has no mid-recognize cancel; surface abort after */
+    };
+    input.signal?.addEventListener('abort', onAbort);
 
-    const blocks: OcrBlock[] = [];
-    const pageBlocks = data.blocks ?? [];
-    for (const block of pageBlocks) {
-      for (const para of block.paragraphs ?? []) {
-        for (const line of para.lines ?? []) {
-          blocks.push({
-            text: line.text.trim(),
-            bbox: tesseractBboxToOurs(line.bbox),
-            confidence: Math.min(1, Math.max(0, (line.confidence ?? 0) / 100)),
-            level: 'line',
-          });
+    try {
+      const image = input.image as Parameters<Worker['recognize']>[0];
+      const { data } = await worker.recognize(image, undefined, {
+        text: true,
+        blocks: true,
+      });
+
+      if (input.signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
+      const blocks: OcrBlock[] = [];
+      const pageBlocks = data.blocks ?? [];
+      for (const block of pageBlocks) {
+        for (const para of block.paragraphs ?? []) {
+          for (const line of para.lines ?? []) {
+            blocks.push({
+              text: line.text.trim(),
+              bbox: tesseractBboxToOurs(line.bbox),
+              confidence: tesseractConfidence(line.confidence ?? 0),
+              level: 'line',
+            });
+          }
         }
       }
-    }
 
-    // Fallback if blocks empty but text present
-    if (blocks.length === 0 && data.text?.trim()) {
-      blocks.push({
-        text: data.text.trim(),
-        bbox: { x: 0, y: 0, w: input.width, h: input.height },
-        confidence: Math.min(1, Math.max(0, (data.confidence ?? 0) / 100)),
-        level: 'page',
-      });
-    }
+      if (blocks.length === 0 && data.text?.trim()) {
+        blocks.push({
+          text: data.text.trim(),
+          bbox: { x: 0, y: 0, w: input.width, h: input.height },
+          confidence: tesseractConfidence(data.confidence ?? 0),
+          level: 'page',
+        });
+      }
 
-    return {
-      blocks,
-      fullText: data.text?.trim() ?? blocks.map((b) => b.text).join('\n'),
-      engineId: this.id,
-      durationMs: Math.round(performance.now() - t0),
-      route: 'ocr',
-    };
+      return {
+        blocks,
+        fullText: data.text?.trim() ?? blocks.map((b) => b.text).join('\n'),
+        engineId: this.id,
+        durationMs: Math.round(performance.now() - t0),
+        route: 'ocr',
+      };
+    } finally {
+      input.signal?.removeEventListener('abort', onAbort);
+    }
   }
 
   async dispose(): Promise<void> {

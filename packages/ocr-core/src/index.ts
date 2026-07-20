@@ -2,3 +2,7 @@ export * from './types.js';
 export * from './export.js';
 export * from './reading-order.js';
 export * from './orchestrator.js';
+export * from './confidence.js';
+export * from './preprocess.js';
+export * from './history.js';
+export * from './mock-engine.js';

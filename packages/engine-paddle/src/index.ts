@@ -1,10 +1,12 @@
 import type {
   EngineInitOptions,
-  OcrBlock,
   OcrEngine,
   OcrPageInput,
   OcrPageResult,
 } from '@localocr/ocr-core';
+import { paddleItemsToBlocks } from './normalize.js';
+
+export { paddleItemsToBlocks } from './normalize.js';
 
 type PaddleService = {
   initialize: () => Promise<void>;
@@ -133,17 +135,7 @@ export class PaddleEngine implements OcrEngine {
     const result = await this.service!.recognize(canvas, { flatten: true });
 
     const items = result.results ?? result.lines?.flat() ?? [];
-    const blocks: OcrBlock[] = items.map((item) => ({
-      text: item.text.trim(),
-      bbox: {
-        x: item.box.x,
-        y: item.box.y,
-        w: item.box.width,
-        h: item.box.height,
-      },
-      confidence: Math.min(1, Math.max(0, item.confidence ?? 0)),
-      level: 'line' as const,
-    }));
+    const blocks = paddleItemsToBlocks(items);
 
     return {
       blocks,
