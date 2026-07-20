@@ -17,10 +17,11 @@ describe('digital pdf text helpers', () => {
     expect(shouldUseDigitalPath('x'.repeat(MIN_TEXT_CHARS))).toBe(true);
   });
 
-  it('maps transforms to canvas coords', () => {
+  it('maps transforms to canvas coords within ±2px math', () => {
     const height = 200;
     const scale = 2;
     // transform: [a,b,c,d,e,f] e=x f=y in PDF space
+    // font size via d=12 → h = 12*2 = 24; x=10*2=20; yPdf=50*2=100; y=200-100-24=76
     const blocks = textItemsToBlocks(
       [{ str: 'Hi', transform: [12, 0, 0, 12, 10, 50], width: 20 }],
       scale,
@@ -29,9 +30,10 @@ describe('digital pdf text helpers', () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]!.text).toBe('Hi');
     expect(blocks[0]!.bbox.x).toBe(20);
+    expect(blocks[0]!.bbox.w).toBe(40);
+    expect(blocks[0]!.bbox.h).toBe(24);
+    expect(blocks[0]!.bbox.y).toBe(76);
     expect(blocks[0]!.confidence).toBe(1);
-    // y = height - f*scale - h
-    expect(blocks[0]!.bbox.y).toBeLessThan(height);
   });
 
   it('buildDigitalPageResult fallback page block', () => {

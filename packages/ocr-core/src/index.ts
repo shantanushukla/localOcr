@@ -8,3 +8,4 @@ export * from './history.js';
 export * from './mock-engine.js';
 export * from './cer.js';
 export * from './searchable-pdf.js';
+export * from './bbox-align.js';
