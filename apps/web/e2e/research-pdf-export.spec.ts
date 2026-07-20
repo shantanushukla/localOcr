@@ -76,6 +76,9 @@ test.describe('searchable PDF unicode (WinAnsi)', () => {
     const body = await page.locator('.ws-results').innerText();
     expect(body.toLowerCase()).toMatch(/latent|semantic|architecture|text/);
 
+    await page.getByRole('button', { name: /^export/i }).first().click();
+    await expect(page.getByTestId('download-searchable-pdf')).toBeVisible();
+
     await Promise.all([
       page.waitForEvent('download', { timeout: 30_000 }).catch(() => null),
       page.getByTestId('download-searchable-pdf').click(),

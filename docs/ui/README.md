@@ -45,9 +45,12 @@ Polished product UI inspired by [setcalculators.com](https://setcalculators.com/
 ### localOCR-specific additions
 
 - Persistent **On-device** pill with success pulse  
+- Landing top bar: **On-device · WebGPU · How it works** (no History)  
+- **Site footer**: Privacy · Terms of use · About us · How it works  
 - Workspace **200 | 1fr | 340** grid (pages · canvas · results)  
 - Confidence coloring (green / amber) in mono  
 - Bbox overlays + cyan highlight for selected line  
+- Mobile “last result” preview may use localStorage only (not a History panel)  
 
 ## How to edit
 

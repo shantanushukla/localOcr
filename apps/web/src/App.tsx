@@ -12,7 +12,6 @@ import {
   loadHistory,
   makeHistoryEntry,
   saveHistoryEntry,
-  clearHistory,
   type HistoryEntry,
 } from '@localocr/ocr-core';
 import { createTesseractEngine } from '@localocr/engine-tesseract';
@@ -20,9 +19,9 @@ import { prepareImage, preparePdf } from '@localocr/engine-digital-pdf';
 import { isImageFile, isPdfFile } from './file-types';
 
 type EngineChoice = 'tesseract' | 'paddle';
-type View = 'landing' | 'workspace';
+type View = 'landing' | 'workspace' | 'export';
 type ResultTab = 'text' | 'markdown' | 'json';
-type Panel = null | 'how' | 'privacy' | 'history';
+type Panel = null | 'how' | 'privacy' | 'terms' | 'about';
 
 const LANGS = [
   { code: 'eng', label: 'English' },
@@ -65,12 +64,15 @@ export function App() {
     null,
   );
   const [drawing, setDrawing] = useState(false);
+  const [showBoxes, setShowBoxes] = useState(true);
+  const [showConf, setShowConf] = useState(true);
 
   const engineRef = useRef<OcrEngine | null>(null);
   const orchRef = useRef<JobOrchestrator | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasSources = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const runGeneration = useRef(0);
 
   const page = job?.pages[pageIndex];
   const blocks: OcrBlock[] = page?.result?.blocks ?? [];
@@ -135,12 +137,17 @@ export function App() {
       setSelectedBlock(null);
       setPageIndex(0);
       setRegion(null);
+      setJob(null);
       canvasSources.current.clear();
+      const gen = ++runGeneration.current;
+      // Enter workspace immediately so cancel / progress chrome is available
+      setView('workspace');
+      setStatus('Loading engine…');
 
       try {
         await ensureEngine(engineChoice, language);
+        if (gen !== runGeneration.current) return;
         const orch = orchRef.current!;
-        setView('workspace');
 
         let pages;
         let fileName = file.name;
@@ -148,6 +155,7 @@ export function App() {
         if (isPdfFile(file)) {
           setStatus('Reading PDF…');
           const prepared = await preparePdf(file, { scale: 2 });
+          if (gen !== runGeneration.current) return;
           pages = prepared.pages;
           fileName = prepared.fileName;
           for (const p of pages) {
@@ -164,6 +172,7 @@ export function App() {
         } else if (isImageFile(file)) {
           setStatus('Preparing image…');
           pages = [await prepareImage(file, { preprocess, deskew })];
+          if (gen !== runGeneration.current) return;
           if (pages[0]?.image instanceof HTMLCanvasElement) {
             canvasSources.current.set(0, pages[0].image);
           }
@@ -173,14 +182,16 @@ export function App() {
 
         setStatus('Running recognition…');
         const finished = await orch.run(fileName, pages);
+        if (gen !== runGeneration.current) return;
         persistJob(finished);
         setStatus('Done — files never left this device.');
       } catch (e) {
+        if (gen !== runGeneration.current) return;
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
         setStatus('');
       } finally {
-        setBusy(false);
+        if (gen === runGeneration.current) setBusy(false);
       }
     },
     [engineChoice, language, preprocess, deskew, ensureEngine, persistJob],
@@ -238,6 +249,7 @@ export function App() {
   }, [region, job, pageIndex, engineChoice, language, ensureEngine]);
 
   const onCancel = () => {
+    runGeneration.current += 1;
     orchRef.current?.cancel();
     setBusy(false);
     setStatus('Cancelled');
@@ -254,17 +266,6 @@ export function App() {
     const text = tab === 'markdown' ? exportMd : tab === 'json' ? exportJson : exportText;
     await navigator.clipboard.writeText(text);
     setStatus('Copied to clipboard');
-  };
-
-  const downloadActive = () => {
-    const text = tab === 'markdown' ? exportMd : tab === 'json' ? exportJson : exportText;
-    const ext = tab === 'markdown' ? 'md' : tab === 'json' ? 'json' : 'txt';
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${job?.fileName ?? 'ocr'}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(a.href);
   };
 
   const downloadSearchablePdf = async () => {
@@ -333,6 +334,55 @@ export function App() {
     return { x, y };
   };
 
+  const pasteFromClipboard = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith('image/'));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const ext = type.split('/')[1] || 'png';
+        const file = new File([blob], `clipboard.${ext}`, { type });
+        void runFiles([file]);
+        return;
+      }
+      setError('No image found on the clipboard.');
+    } catch {
+      setError('Clipboard access denied. Use Choose files instead.');
+    }
+  };
+
+  const downloadNamed = (kind: 'txt' | 'md' | 'json') => {
+    if (!job) return;
+    const text = kind === 'md' ? exportMd : kind === 'json' ? exportJson : exportText;
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${job.fileName || 'ocr'}.${kind === 'md' ? 'md' : kind}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const engineLabel =
+    engineChoice === 'paddle'
+      ? runtimeMode === 'webgpu'
+        ? 'Paddle · WebGPU'
+        : 'Paddle · WASM'
+      : 'Tesseract';
+
+  const langShort = LANGS.find((l) => l.code === language)?.code.slice(0, 2).toUpperCase() ?? 'EN';
+
+  const statusLabel = (s: string) => {
+    if (s === 'done') return 'Done';
+    if (s === 'running') return 'Running';
+    if (s === 'failed') return 'Failed';
+    if (s === 'queued') return 'Queued';
+    if (s === 'cancelled') return 'Cancelled';
+    return s;
+  };
+
+  const lastHistory = history[0];
+
   return (
     <div className="app">
       <a className="skip-link" href="#main">
@@ -343,78 +393,121 @@ export function App() {
           <div className="logo-mark" aria-hidden="true">
             lO
           </div>
-          <div>
-            <div className="brand-name">localOCR</div>
+          <div className="brand-text">
+            <div className="brand-name">
+              {view === 'export' ? 'Export results' : 'localOCR'}
+            </div>
             <div className="brand-tag">
-              {job ? `${job.fileName} · ${job.pages.length} page(s)` : 'On-device document text'}
+              {view === 'export'
+                ? 'Nothing left this device'
+                : job
+                  ? `${job.fileName} · ${job.pages.length} page${job.pages.length === 1 ? '' : 's'}`
+                  : 'On-device document text'}
             </div>
           </div>
         </div>
         <div className="top-actions">
-          <span className="pill soft" title="Processing stays in this browser tab" data-testid="on-device-badge">
-            <span className="dot" /> On-device
-          </span>
-          <span
-            className="pill ghost"
-            title={
-              runtimeMode === 'webgpu'
-                ? 'WebGPU available — Paddle will prefer GPU acceleration'
-                : 'WebGPU unavailable — engines use WASM (slower but works)'
-            }
-            data-testid="runtime-mode"
-          >
-            {runtimeMode === 'webgpu' ? 'WebGPU ready' : runtimeMode === 'wasm' ? 'WASM mode' : '…'}
-          </span>
-          <select
-            className="engine-select"
-            value={engineChoice}
-            disabled={busy}
-            onChange={(e) => {
-              setEngineChoice(e.target.value as EngineChoice);
-              engineRef.current = null;
-            }}
-            aria-label="OCR engine"
-          >
-            <option value="tesseract">Tesseract</option>
-            <option value="paddle">Paddle ONNX</option>
-          </select>
-          <select
-            className="engine-select"
-            value={language}
-            disabled={busy || engineChoice === 'paddle'}
-            onChange={(e) => {
-              setLanguage(e.target.value);
-              engineRef.current = null;
-            }}
-            aria-label="Language"
-            title={engineChoice === 'paddle' ? 'Paddle uses bundled multi-lang models' : 'Tesseract language pack'}
-          >
-            {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="pill ghost" onClick={() => setPanel('how')}>
-            How it works
-          </button>
-          <button type="button" className="pill ghost" onClick={() => setPanel('privacy')}>
-            Privacy
-          </button>
-          <button type="button" className="pill ghost" onClick={() => setPanel('history')}>
-            History
-          </button>
-          {view === 'workspace' && (
-            <button
-              type="button"
-              className="pill ghost"
-              onClick={() => {
-                setView('landing');
-                setJob(null);
-              }}
-            >
-              New file
-            </button>
+          {view === 'export' ? (
+            <>
+              <button type="button" className="pill ghost" onClick={() => setView('workspace')}>
+                ← Back to workspace
+              </button>
+              <span className="pill soft" data-testid="on-device-badge">
+                <span className="dot" /> On-device
+              </span>
+            </>
+          ) : view === 'landing' ? (
+            <>
+              <span
+                className="pill soft"
+                title="Processing stays in this browser tab"
+                data-testid="on-device-badge"
+              >
+                <span className="dot" /> On-device
+              </span>
+              <span
+                className="pill ghost hide-on-mobile"
+                title={
+                  runtimeMode === 'webgpu'
+                    ? 'WebGPU available — Paddle will prefer GPU acceleration'
+                    : 'WebGPU unavailable — engines use WASM (slower but works)'
+                }
+                data-testid="runtime-mode"
+              >
+                {runtimeMode === 'webgpu' ? 'WebGPU ready' : runtimeMode === 'wasm' ? 'WASM mode' : '…'}
+              </span>
+              <button type="button" className="pill ghost" onClick={() => setPanel('how')}>
+                How it works
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="pill soft" data-testid="on-device-badge">
+                <span className="dot" /> On-device
+              </span>
+              <select
+                className="engine-select"
+                value={engineChoice}
+                disabled={busy}
+                onChange={(e) => {
+                  setEngineChoice(e.target.value as EngineChoice);
+                  engineRef.current = null;
+                }}
+                aria-label="OCR engine"
+                title={engineLabel}
+              >
+                <option value="tesseract">Tesseract</option>
+                <option value="paddle">Paddle ONNX</option>
+              </select>
+              <span className="pill ghost hide-on-mobile" title={engineLabel}>
+                {engineLabel}
+              </span>
+              <select
+                className="engine-select hide-on-mobile"
+                value={language}
+                disabled={busy || engineChoice === 'paddle'}
+                onChange={(e) => {
+                  setLanguage(e.target.value);
+                  engineRef.current = null;
+                }}
+                aria-label="Language"
+                title={
+                  engineChoice === 'paddle'
+                    ? 'Paddle uses bundled multi-lang models'
+                    : 'Tesseract language pack'
+                }
+              >
+                {LANGS.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.code === 'eng' ? 'EN' : l.label}
+                  </option>
+                ))}
+              </select>
+              <span className="pill ghost hide-on-mobile">{langShort}</span>
+              <button
+                type="button"
+                className="pill primary"
+                disabled={!job || job.status === 'running' || busy}
+                onClick={() => setView('export')}
+              >
+                Export
+              </button>
+              <button
+                type="button"
+                className="pill ghost hide-on-mobile"
+                onClick={() => {
+                  runGeneration.current += 1;
+                  orchRef.current?.cancel();
+                  setBusy(false);
+                  setView('landing');
+                  setJob(null);
+                  setStatus('');
+                  setError(null);
+                }}
+              >
+                New file
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -441,7 +534,13 @@ export function App() {
           >
             <div className="modal-h">
               <h2 id="modal-title">
-                {panel === 'how' ? 'How it works' : panel === 'privacy' ? 'Privacy' : 'History'}
+                {panel === 'how'
+                  ? 'How it works'
+                  : panel === 'privacy'
+                    ? 'Privacy'
+                    : panel === 'terms'
+                      ? 'Terms of use'
+                      : 'About us'}
               </h2>
               <button type="button" className="pill ghost" onClick={() => setPanel(null)}>
                 Close
@@ -467,8 +566,9 @@ export function App() {
                     on first use, like any static website asset — not your document pixels.
                   </p>
                   <p>
-                    Optional session history is stored only in this browser&apos;s{' '}
-                    <code>localStorage</code>. Clear it anytime below.
+                    A short “last result” preview may be stored in this browser&apos;s{' '}
+                    <code>localStorage</code> so mobile can show recent text. Document images are
+                    never uploaded or retained on a server.
                   </p>
                   <p>
                     Analytics are off by default. No first-party document upload endpoint exists —
@@ -476,36 +576,44 @@ export function App() {
                   </p>
                 </>
               )}
-              {panel === 'history' && (
+              {panel === 'terms' && (
                 <>
-                  {history.length === 0 ? (
-                    <p className="muted">No saved results yet.</p>
-                  ) : (
-                    <ul className="history-list">
-                      {history.map((h) => (
-                        <li key={h.id}>
-                          <strong>{h.fileName}</strong>
-                          <span className="muted">
-                            {' '}
-                            · {h.pageCount}p · {h.engine} ·{' '}
-                            {new Date(h.savedAt).toLocaleString()}
-                          </span>
-                          <div className="muted small">{h.previewText}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ marginTop: '1rem' }}
-                    onClick={() => {
-                      clearHistory();
-                      setHistory([]);
-                    }}
-                  >
-                    Clear history
-                  </button>
+                  <p>
+                    localOCR is provided as-is for personal and professional document text
+                    extraction that runs entirely in your browser.
+                  </p>
+                  <p>
+                    You are responsible for the documents you process and for complying with any
+                    rights or laws that apply to that content. Do not use the tool for unlawful
+                    purposes.
+                  </p>
+                  <p>
+                    Results from OCR engines can contain mistakes. Always verify critical text
+                    before relying on exports in legal, medical, financial, or other high-stakes
+                    contexts.
+                  </p>
+                  <p>
+                    The service may change, pause, or discontinue features without notice. We are
+                    not liable for loss of data that never leaves your device, or for decisions
+                    made from OCR output.
+                  </p>
+                </>
+              )}
+              {panel === 'about' && (
+                <>
+                  <p>
+                    <strong>localOCR</strong> is a privacy-first OCR app: PDFs and images are
+                    recognized on-device with open engines (Tesseract, optional Paddle ONNX) and a
+                    fast digital PDF text-layer path.
+                  </p>
+                  <p>
+                    The product UI follows a calm utility pattern (setcalculators-inspired): clear
+                    drop zone, honest status chips, and structured export — without accounts or
+                    document uploads.
+                  </p>
+                  <p className="muted small">
+                    Design source: <code>docs/ui</code> · On-device by default.
+                  </p>
                 </>
               )}
             </div>
@@ -515,12 +623,16 @@ export function App() {
 
       {view === 'landing' && (
         <main className="landing" id="main">
-          <div className="hero">
+          <div className="hero desktop-only">
             <h1>OCR that never leaves your browser</h1>
             <p>
               Drop a PDF or image. Models run locally with bounding boxes and confidence scores —
               no account, no upload.
             </p>
+          </div>
+          <div className="hero mobile-only">
+            <h1>Scan or import</h1>
+            <p>OCR runs on this device. Nothing is uploaded.</p>
           </div>
           <div className="drop-card">
             <div
@@ -543,8 +655,17 @@ export function App() {
               }}
               aria-label="Drop PDF or image to OCR"
             >
-              <h2>Drop PDF or image here</h2>
-              <p>Digital PDFs extract instantly; scans use on-device OCR.</p>
+              <div className="drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 16V4" />
+                  <path d="M7 9l5-5 5 5" />
+                  <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                </svg>
+              </div>
+              <h2 className="desktop-only">Drop PDF or image here</h2>
+              <h2 className="mobile-only">Tap to capture</h2>
+              <p className="desktop-only">Digital PDFs extract instantly; scans use on-device OCR.</p>
+              <p className="mobile-only">Camera or photo library</p>
               <div className="btn-row">
                 <button
                   type="button"
@@ -555,31 +676,80 @@ export function App() {
                     fileInputRef.current?.click();
                   }}
                 >
-                  Choose files
+                  <span className="desktop-only">Choose files</span>
+                  <span className="mobile-only">Choose photo</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary hide-on-mobile"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void pasteFromClipboard();
+                  }}
+                >
+                  Paste from clipboard
                 </button>
               </div>
             </div>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={preprocess}
-                onChange={(e) => setPreprocess(e.target.checked)}
-              />
-              Enhance images (contrast / grayscale) before OCR
-            </label>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={deskew}
-                onChange={(e) => setDeskew(e.target.checked)}
-              />
-              Auto-deskew (small rotation correction)
-            </label>
             <div className="formats">
               Supports <span>PDF</span>
               <span>PNG</span>
               <span>JPEG</span>
               <span>WebP</span>
+            </div>
+            <div className="options-row hide-on-mobile">
+              <label className="toggle-row">
+                <span className="opt-label">Engine</span>
+                <select
+                  className="engine-select"
+                  value={engineChoice}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setEngineChoice(e.target.value as EngineChoice);
+                    engineRef.current = null;
+                  }}
+                  aria-label="OCR engine"
+                >
+                  <option value="tesseract">Tesseract</option>
+                  <option value="paddle">Paddle ONNX</option>
+                </select>
+              </label>
+              <label className="toggle-row">
+                <span className="opt-label">Language</span>
+                <select
+                  className="engine-select"
+                  value={language}
+                  disabled={busy || engineChoice === 'paddle'}
+                  onChange={(e) => {
+                    setLanguage(e.target.value);
+                    engineRef.current = null;
+                  }}
+                  aria-label="Language"
+                >
+                  {LANGS.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={preprocess}
+                  onChange={(e) => setPreprocess(e.target.checked)}
+                />
+                Enhance images
+              </label>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={deskew}
+                  onChange={(e) => setDeskew(e.target.checked)}
+                />
+                Auto-deskew
+              </label>
             </div>
             <input
               ref={fileInputRef}
@@ -597,7 +767,42 @@ export function App() {
               {status}
             </p>
           )}
-          <div className="trust-row">
+          {lastHistory && (
+            <div className="mobile-last mobile-only">
+              <h3>Last result</h3>
+              <p>
+                <strong>{lastHistory.fileName}</strong>
+                <br />
+                {lastHistory.previewText}
+              </p>
+            </div>
+          )}
+          {lastHistory && (
+            <div className="mobile-bottom-bar mobile-only">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => void navigator.clipboard.writeText(lastHistory.previewText)}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  if (navigator.share) {
+                    void navigator.share({ text: lastHistory.previewText }).catch(() => undefined);
+                  } else {
+                    void navigator.clipboard.writeText(lastHistory.previewText);
+                    setStatus('Copied — share sheet unavailable');
+                  }
+                }}
+              >
+                Share text
+              </button>
+            </div>
+          )}
+          <div className="trust-row desktop-only">
             <div className="trust">
               <strong>Private by default</strong>
               <span>Pixels stay in your tab. Only model weights download from the CDN.</span>
@@ -614,77 +819,111 @@ export function App() {
         </main>
       )}
 
-      {view === 'workspace' && job && (
+      {view === 'workspace' && (
         <main className="workspace" id="main">
-          {status && (
-            <p className="status-msg" style={{ margin: '0 0 0.5rem' }} role="status" aria-live="polite">
-              {status}
-            </p>
-          )}
           <div className="ws-body">
             <aside className="ws-side" aria-label="Pages">
               <div className="ws-side-h">Pages</div>
-              {job.pages.map((p) => (
-                <button
-                  key={p.index}
-                  type="button"
-                  className={`thumb${p.index === pageIndex ? ' active' : ''}`}
-                  onClick={() => {
-                    setPageIndex(p.index);
-                    setSelectedBlock(null);
-                    setRegion(null);
-                  }}
-                >
-                  {p.previewUrl ? (
-                    <img src={p.previewUrl} alt={`Page ${p.index + 1}`} />
-                  ) : (
-                    <div style={{ height: 90, background: '#e2e8f0' }} />
-                  )}
-                  <div className="thumb-meta">
-                    <span>Page {p.index + 1}</span>
-                    <span
-                      style={{
-                        color:
-                          p.status === 'done'
-                            ? 'var(--color-success)'
-                            : p.status === 'running'
-                              ? 'var(--color-primary)'
-                              : p.status === 'failed'
-                                ? '#b91c1c'
-                                : undefined,
+              <div className="thumb-list">
+                {job ? (
+                  job.pages.map((p) => (
+                    <button
+                      key={p.index}
+                      type="button"
+                      className={`thumb${p.index === pageIndex ? ' active' : ''}`}
+                      onClick={() => {
+                        setPageIndex(p.index);
+                        setSelectedBlock(null);
+                        setRegion(null);
                       }}
                     >
-                      {p.status}
-                    </span>
+                      {p.previewUrl ? (
+                        <img src={p.previewUrl} alt={`Page ${p.index + 1}`} />
+                      ) : (
+                        <div className="thumb-placeholder" />
+                      )}
+                      <div className="thumb-meta">
+                        <span>Page {p.index + 1}</span>
+                        <span
+                          className={
+                            p.status === 'done'
+                              ? 'badge-ok'
+                              : p.status === 'running'
+                                ? 'badge-run'
+                                : p.status === 'failed'
+                                  ? 'badge-fail'
+                                  : 'badge-queued'
+                          }
+                        >
+                          {statusLabel(p.status)}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="thumb placeholder-thumb">
+                    <div className="thumb-placeholder" />
+                    <div className="thumb-meta">
+                      <span>Page 1</span>
+                      <span className="badge-run">Loading</span>
+                    </div>
                   </div>
-                </button>
-              ))}
+                )}
+              </div>
             </aside>
 
             <section className="ws-center">
               <div className="ws-toolbar" role="toolbar" aria-label="Canvas tools">
-                <button
-                  type="button"
-                  className={`tool${regionMode ? ' active' : ''}`}
-                  onClick={() => setRegionMode((v) => !v)}
-                  title="Region OCR"
-                >
-                  ▭ Region
-                </button>
-                {regionMode && region && (
+                <div className="tool-group">
                   <button
                     type="button"
-                    className="btn btn-primary"
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
-                    disabled={busy}
-                    onClick={() => void runRegionOcr()}
+                    className={`tool${!regionMode ? ' active' : ''}`}
+                    onClick={() => setRegionMode(false)}
+                    title="Select"
+                    aria-label="Select tool"
                   >
-                    OCR selection
+                    ↖
                   </button>
-                )}
+                  <button
+                    type="button"
+                    className={`tool${regionMode ? ' active' : ''}`}
+                    onClick={() => setRegionMode((v) => !v)}
+                    title="Region OCR"
+                    aria-label="Region OCR"
+                  >
+                    ▭
+                  </button>
+                  {regionMode && region && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                      disabled={busy}
+                      onClick={() => void runRegionOcr()}
+                    >
+                      OCR selection
+                    </button>
+                  )}
+                </div>
+                <div className="tool-group">
+                  <button
+                    type="button"
+                    className={`tool tool-pill${showBoxes ? ' active' : ''}`}
+                    onClick={() => setShowBoxes((v) => !v)}
+                  >
+                    Boxes {showBoxes ? 'on' : 'off'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`tool tool-pill${showConf ? ' active' : ''}`}
+                    onClick={() => setShowConf((v) => !v)}
+                  >
+                    Conf. heat
+                  </button>
+                </div>
               </div>
               <div className="ws-canvas-wrap">
-                {page?.previewUrl && (
+                {page?.previewUrl ? (
                   <div
                     className="doc-stage"
                     ref={stageRef}
@@ -709,18 +948,20 @@ export function App() {
                       draggable={false}
                     />
                     <div className="bbox-layer">
-                      {blocks.map((b, i) => (
-                        <div
-                          key={i}
-                          className={`bbox${selectedBlock === i ? ' hi' : ''}`}
-                          style={{
-                            left: `${(b.bbox.x / (page.width || 1)) * 100}%`,
-                            top: `${(b.bbox.y / (page.height || 1)) * 100}%`,
-                            width: `${(b.bbox.w / (page.width || 1)) * 100}%`,
-                            height: `${(b.bbox.h / (page.height || 1)) * 100}%`,
-                          }}
-                        />
-                      ))}
+                      {showBoxes &&
+                        blocks.map((b, i) => (
+                          <div
+                            key={i}
+                            className={`bbox${selectedBlock === i ? ' hi' : ''}`}
+                            style={{
+                              left: `${(b.bbox.x / (page.width || 1)) * 100}%`,
+                              top: `${(b.bbox.y / (page.height || 1)) * 100}%`,
+                              width: `${(b.bbox.w / (page.width || 1)) * 100}%`,
+                              height: `${(b.bbox.h / (page.height || 1)) * 100}%`,
+                              opacity: showConf ? 0.35 + b.confidence * 0.65 : 1,
+                            }}
+                          />
+                        ))}
                       {region && page.width && page.height && (
                         <div
                           className="bbox hi"
@@ -734,15 +975,26 @@ export function App() {
                       )}
                     </div>
                   </div>
+                ) : (
+                  <div className="ws-empty" role="status">
+                    <p>{status || (busy ? 'Preparing document…' : 'Drop a file to begin')}</p>
+                    {busy && (
+                      <button type="button" className="pill ghost" onClick={onCancel}>
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="ws-status">
                 <span>
-                  {busy
-                    ? `Processing… page ${Math.min(doneCount + 1, job.pages.length)} of ${job.pages.length}`
-                    : page?.result
-                      ? `${page.result.engineId} · ${page.result.durationMs}ms · ${page.result.route ?? 'ocr'}`
-                      : (page?.status ?? '')}
+                  {busy && job
+                    ? `Page ${Math.min(doneCount + 1, job.pages.length)} of ${job.pages.length} · processing`
+                    : busy
+                      ? status || 'Processing…'
+                      : page?.result && job
+                        ? `Page ${pageIndex + 1} of ${job.pages.length} · ${page.result.engineId} · ${page.result.durationMs}ms`
+                        : status || page?.status || ''}
                 </span>
                 <div
                   className="progress"
@@ -793,9 +1045,11 @@ export function App() {
                         tabIndex={0}
                       >
                         <span>{b.text}</span>
-                        <span className={confidenceCssClass(b.confidence)}>
-                          {b.confidence.toFixed(2)}
-                        </span>
+                        {showConf && (
+                          <span className={confidenceCssClass(b.confidence)}>
+                            {b.confidence.toFixed(2)}
+                          </span>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -805,33 +1059,108 @@ export function App() {
                         : (page?.error ?? 'No text yet.')}
                     </p>
                   ))}
-                {tab === 'markdown' && (
-                  <pre className="export-pre">{exportMd || '—'}</pre>
-                )}
+                {tab === 'markdown' && <pre className="export-pre">{exportMd || '—'}</pre>}
                 {tab === 'json' && <pre className="export-pre json">{exportJson || '—'}</pre>}
               </div>
               <div className="result-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => void copyActive()}>
-                  Copy
-                </button>
-                <button type="button" className="btn btn-primary" onClick={downloadActive}>
-                  Download
-                </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  disabled={busy || !job}
-                  onClick={() => void downloadSearchablePdf()}
-                  title="Image pages + invisible text layer for search/select"
-                  data-testid="download-searchable-pdf"
+                  onClick={() => void copyActive()}
+                  disabled={!job}
                 >
-                  PDF
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setView('export')}
+                  disabled={!job || job.status === 'running'}
+                >
+                  Export…
                 </button>
               </div>
             </aside>
           </div>
         </main>
       )}
+
+      {view === 'export' && job && (
+        <main className="export-view" id="main">
+          <div className="export-main">
+            <section className="panel">
+              <div className="panel-h">
+                <h2>Markdown</h2>
+                <span className="pill soft">Preview</span>
+              </div>
+              <div className="panel-body">
+                <pre className="export-pre" style={{ fontFamily: 'var(--font-sans)', fontSize: '0.9rem' }}>
+                  {exportMd || '—'}
+                </pre>
+                <p className="export-meta">
+                  Generated locally · engine {job.engineId} · {job.pages.length} page
+                  {job.pages.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panel-h">
+                <h2>JSON structure</h2>
+                <span className="pill soft">Schema v1</span>
+              </div>
+              <div className="panel-body mono">{exportJson || '—'}</div>
+            </section>
+          </div>
+          <div className="export-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => downloadNamed('txt')}>
+              Download .txt
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => downloadNamed('md')}>
+              Download .md
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => downloadNamed('json')}>
+              Download .json
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void navigator.clipboard.writeText(exportText + '\n\n' + exportJson)}
+            >
+              Copy all
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => void downloadSearchablePdf()}
+              data-testid="download-searchable-pdf"
+              title="Image pages + invisible text layer"
+            >
+              Searchable PDF
+            </button>
+          </div>
+        </main>
+      )}
+
+      <footer className="site-footer">
+        <div className="site-footer-inner">
+          <span className="site-footer-brand">localOCR · on-device OCR</span>
+          <nav className="site-footer-nav" aria-label="Site">
+            <button type="button" className="footer-link" onClick={() => setPanel('privacy')}>
+              Privacy
+            </button>
+            <button type="button" className="footer-link" onClick={() => setPanel('terms')}>
+              Terms of use
+            </button>
+            <button type="button" className="footer-link" onClick={() => setPanel('about')}>
+              About us
+            </button>
+            <button type="button" className="footer-link" onClick={() => setPanel('how')}>
+              How it works
+            </button>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

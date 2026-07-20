@@ -11,13 +11,18 @@ test.describe('localOCR e2e', () => {
     await expect(page.getByRole('heading', { name: /never leaves your browser/i })).toBeVisible();
     await expect(page.getByText('On-device', { exact: false }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /drop pdf or image/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /privacy/i })).toBeVisible();
+    await expect(page.getByRole('banner').getByRole('button', { name: /how it works/i })).toBeVisible();
+    await expect(page.locator('.site-footer').getByRole('button', { name: /^privacy$/i })).toBeVisible();
+    await expect(page.locator('.site-footer').getByRole('button', { name: /terms/i })).toBeVisible();
+    await expect(page.locator('.site-footer').getByRole('button', { name: /about/i })).toBeVisible();
     await expect(page.getByTestId('runtime-mode')).toBeVisible();
+    // History is not in the product chrome (design: topbar = On-device · WebGPU · How it works)
+    await expect(page.getByRole('button', { name: /^history$/i })).toHaveCount(0);
   });
 
   test('privacy modal explains on-device processing', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: /^privacy$/i }).click();
+    await page.locator('.site-footer').getByRole('button', { name: /^privacy$/i }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByText(/documents stay on your device/i)).toBeVisible();
     await expect(page.getByText(/no first-party document upload/i)).toBeVisible();
@@ -29,14 +34,14 @@ test.describe('localOCR e2e', () => {
     test.setTimeout(180_000);
     await page.goto('/');
 
-    // Ensure Tesseract path (default)
+    // Ensure Tesseract path (default) via landing options (docs/ui + product controls)
     await page.getByLabel('OCR engine').selectOption('tesseract');
     await page.getByLabel('Language').selectOption('eng');
 
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles(path.join(fixtures, 'invoice-sample.png'));
 
-    // Workspace appears
+    // Workspace appears immediately while engine/OCR runs
     await expect(page.locator('.workspace')).toBeVisible({ timeout: 30_000 });
 
     // Wait for OCR completion status or results
@@ -70,10 +75,12 @@ test.describe('localOCR e2e', () => {
     expect(jsonText).toContain('confidence');
     expect(jsonText).toMatch(/"index"\s*:\s*0/);
 
-    // Searchable PDF export button present
+    // Export view (design frame) + searchable PDF
+    await page.getByRole('button', { name: /^export/i }).first().click();
+    await expect(page.getByRole('heading', { name: /markdown/i })).toBeVisible();
     await expect(page.getByTestId('download-searchable-pdf')).toBeEnabled();
 
-    // PDF button must not surface WinAnsi encoding errors (→ etc. in OCR text)
+    // PDF button must not surface WinAnsi encoding errors
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
     await page.getByTestId('download-searchable-pdf').click();
     await page.waitForTimeout(1500);
@@ -88,7 +95,6 @@ test.describe('localOCR e2e', () => {
     if (dl) {
       expect(dl.suggestedFilename()).toMatch(/\.pdf$/i);
     } else {
-      // download may be blocked in headless; at least status should not be an encoding error
       await expect(page.getByText(/WinAnsi|cannot encode/i)).toHaveCount(0);
     }
   });
@@ -154,10 +160,10 @@ test.describe('localOCR e2e', () => {
     await fileInput.setInputFiles(path.join(fixtures, 'invoice-sample.png'));
     await expect(page.locator('.workspace')).toBeVisible({ timeout: 30_000 });
 
-    const cancel = page.getByRole('button', { name: /^cancel$/i });
-    // Poll briefly for cancel visibility during busy state
+    // Cancel is available as soon as workspace opens (engine load + OCR)
+    const cancel = page.getByRole('button', { name: /^cancel$/i }).first();
     let sawCancel = false;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       if (await cancel.isVisible().catch(() => false)) {
         sawCancel = true;
         await cancel.click();
