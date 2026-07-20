@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Research clones (large) — tracked via research/README.md only
+research/*
+!research/README.md
+!research/SPIKE.md
+!research/fixtures/
+!research/scripts/
+
+# Test / coverage
+coverage/
+playwright-report/
+test-results/
+
+# Models (downloaded at runtime or via CDN)
+public/models/**
+!public/models/.gitkeep
+apps/web/public/models/**
+!apps/web/public/models/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# Wrangler
+.wrangler/
+.dev.vars

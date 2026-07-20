@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>localOCR — Figma Design Frames</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* Design tokens — inspired by setcalculators.com */
+    :root {
+      --color-bg: #f8fafc;
+      --color-surface: #ffffff;
+      --color-surface-elevated: #ffffff;
+      --color-border: #e2e8f0;
+      --color-border-strong: #cbd5e1;
+      --color-text: #0f172a;
+      --color-text-muted: #64748b;
+      --color-primary: #4f46e5;
+      --color-primary-hover: #4338ca;
+      --color-primary-light: #eef2ff;
+      --color-accent: #06b6d4;
+      --color-accent-light: #ecfeff;
+      --color-success: #10b981;
+      --color-warning: #f59e0b;
+      --color-placeholder: #94a3b8;
+      --color-output-bg: #eef2ff;
+      --color-output-border: #c7d2fe;
+      --color-focus-ring: rgba(79, 70, 229, 0.15);
+      --gradient-primary: rgba(79, 70, 229, 0.15);
+      --gradient-accent: rgba(6, 182, 212, 0.1);
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 12px 40px rgba(79, 70, 229, 0.12);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --figma-canvas: #e5e5e5;
+      --figma-label: #737373;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background: var(--figma-canvas);
+      color: var(--color-text);
+    }
+
+    /* Figma board chrome */
+    .board {
+      padding: 64px 80px 120px;
+      min-width: max-content;
+    }
+    .board-header {
+      margin-bottom: 48px;
+      max-width: 720px;
+    }
+    .board-header h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #171717;
+    }
+    .board-header p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--figma-label);
+    }
+    .board-header code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #d4d4d4;
+    }
+    .row {
+      display: flex;
+      gap: 64px;
+      align-items: flex-start;
+      margin-bottom: 80px;
+    }
+    .frame-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .frame-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--figma-label);
+      letter-spacing: 0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .frame-label::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: #a3a3a3;
+    }
+    .frame-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #a3a3a3;
+      margin-left: 18px;
+    }
+    .frame {
+      background: var(--color-bg);
+      border-radius: 4px;
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.06),
+        0 24px 48px rgba(0,0,0,0.12);
+      overflow: hidden;
+      position: relative;
+    }
+    .frame-desktop { width: 1280px; height: 800px; }
+    .frame-mobile { width: 390px; height: 844px; }
+
+    /* App chrome shared */
+    .app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, var(--gradient-primary), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 0%, var(--gradient-accent), transparent),
+        var(--color-bg);
+      font-family: var(--font-sans);
+      color: var(--color-text);
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.1rem 1.75rem;
+      gap: 1rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: inherit;
+    }
+    .logo-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--color-primary), #6366f1 50%, var(--color-accent));
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      box-shadow: var(--shadow-md);
+      flex-shrink: 0;
+    }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+    .brand-name { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.02em; }
+    .brand-tag { font-size: 0.72rem; color: var(--color-text-muted); font-weight: 500; }
+    .top-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+      border: 1.5px solid var(--color-border);
+      background: var(--color-surface);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--color-text);
+      box-shadow: var(--shadow-sm);
+    }
+    .pill.primary {
+      background: var(--color-primary);
+      border-color: var(--color-primary);
+      color: #fff;
+    }
+    .pill.soft {
+      background: var(--color-primary-light);
+      border-color: transparent;
+      color: var(--color-primary);
+    }
+    .pill .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--color-success);
+      box-shadow: 0 0 0 2px rgba(16,185,129,0.2);
+    }
+    .pill .dot.warn { background: var(--color-warning); box-shadow: 0 0 0 2px rgba(245,158,11,0.2); }
+
+    /* Landing */
+    .landing-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.5rem 1.75rem 2rem;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .hero {
+      text-align: center;
+      max-width: 640px;
+      margin-bottom: 1.75rem;
+    }
+    .hero h1 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(1.85rem, 3vw, 2.35rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--color-text-muted);
+      font-size: 1.05rem;
+      line-height: 1.65;
+    }
+    .drop-card {
+      width: 100%;
+      max-width: 720px;
+      background: var(--color-surface);
+      border: 1.5px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      padding: 2rem 2rem 1.5rem;
+    }
+    .dropzone {
+      border: 2px dashed var(--color-output-border);
+      background: var(--color-output-bg);
+      border-radius: var(--radius-md);
+      padding: 2.75rem 1.5rem;
+      text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .drop-icon {
+      width: 52px; height: 52px;
+      margin: 0 auto 1rem;
+      border-radius: 14px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      display: grid; place-items: center;
+      box-shadow: var(--shadow-sm);
+      color: var(--color-primary);
+    }
+    .dropzone h2 {
+      margin: 0 0 0.35rem;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .dropzone p {
+      margin: 0 0 1.25rem;
+      color: var(--color-text-muted);
+      font-size: 0.92rem;
+    }
+    .btn-row { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.15rem;
+      border-radius: 999px;
+      font-family: var(--font-sans);
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: 1.5px solid transparent;
+      cursor: default;
+    }
+    .btn-primary {
+      background: var(--color-primary);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+    }
+    .btn-secondary {
+      background: var(--color-surface);
+      color: var(--color-text);
+      border-color: var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .formats {
+      margin-top: 1.15rem;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--color-text-muted);
+    }
+    .formats span {
+      display: inline-block;
+      margin: 0 0.2rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+    }
+    .trust-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.75rem;
+      width: 100%;
+      max-width: 720px;
+    }
+    .trust {
+      flex: 1;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.1rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .trust strong {
+      display: block;
+      font-size: 0.88rem;
+      margin-bottom: 0.25rem;
+    }
+    .trust span {
+      font-size: 0.78rem;
+      color: var(--color-text-muted);
+      line-height: 1.45;
+    }
+
+    /* Workspace */
+    .ws-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 200px 1fr 340px;
+      gap: 0;
+      min-height: 0;
+      border-top: 1px solid var(--color-border);
+      background: transparent;
+      margin: 0 1rem 1rem;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-md);
+      background: var(--color-surface);
+    }
+    .ws-side {
+      background: var(--color-bg);
+      border-right: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .ws-side-h {
+      padding: 0.85rem 1rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+      border-bottom: 1px solid var(--color-border);
+    }
+    .thumb-list { padding: 0.65rem; display: flex; flex-direction: column; gap: 0.5rem; overflow: auto; }
+    .thumb {
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 0.45rem;
+      cursor: default;
+    }
+    .thumb.active {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px var(--color-focus-ring);
+    }
+    .thumb-preview {
+      height: 88px;
+      border-radius: 6px;
+      background:
+        linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+      border: 1px solid var(--color-border);
+      position: relative;
+      overflow: hidden;
+    }
+    .thumb-preview .line {
+      position: absolute; left: 12%; right: 18%; height: 4px;
+      background: #94a3b8; border-radius: 2px; opacity: 0.55;
+    }
+    .thumb-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 0.35rem; font-size: 0.72rem; color: var(--color-text-muted); font-weight: 600;
+    }
+    .badge-ok {
+      color: var(--color-success); font-size: 0.68rem;
+    }
+    .ws-center {
+      display: flex; flex-direction: column; min-width: 0; background: #f1f5f9;
+    }
+    .ws-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.5rem; padding: 0.55rem 0.85rem;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+    }
+    .tool-group { display: flex; gap: 0.35rem; }
+    .tool {
+      width: 32px; height: 32px; border-radius: 8px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      display: grid; place-items: center;
+      color: var(--color-text-muted);
+      font-size: 13px;
+    }
+    .tool.active {
+      background: var(--color-primary-light);
+      border-color: var(--color-output-border);
+      color: var(--color-primary);
+    }
+    .ws-canvas-wrap {
+      flex: 1; display: grid; place-items: center; padding: 1.25rem; min-height: 0;
+    }
+    .doc-page {
+      width: min(420px, 90%);
+      aspect-ratio: 8.5 / 11;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--color-border);
+      position: relative;
+      padding: 2rem 1.75rem;
+    }
+    .doc-page h3 {
+      margin: 0 0 1rem;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .fake-line {
+      height: 9px; border-radius: 3px; margin-bottom: 10px;
+      background: #e2e8f0; position: relative;
+    }
+    .fake-line.w80 { width: 80%; }
+    .fake-line.w95 { width: 95%; }
+    .fake-line.w60 { width: 60%; }
+    .fake-line.w90 { width: 90%; }
+    .bbox {
+      position: absolute;
+      border: 1.5px solid rgba(79, 70, 229, 0.75);
+      background: rgba(79, 70, 229, 0.08);
+      border-radius: 3px;
+    }
+    .bbox.hi {
+      border-color: var(--color-accent);
+      background: rgba(6, 182, 212, 0.12);
+    }
+    .ws-status {
+      padding: 0.5rem 0.85rem;
+      border-top: 1px solid var(--color-border);
+      background: var(--color-surface);
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.78rem; color: var(--color-text-muted); font-weight: 500;
+    }
+    .progress {
+      height: 4px; flex: 1; max-width: 180px; margin: 0 0.75rem;
+      background: var(--color-border); border-radius: 999px; overflow: hidden;
+    }
+    .progress > i {
+      display: block; height: 100%; width: 66%;
+      background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+      border-radius: 999px;
+    }
+    .ws-results {
+      border-left: 1px solid var(--color-border);
+      display: flex; flex-direction: column; min-height: 0; background: var(--color-surface);
+    }
+    .tabs {
+      display: flex; gap: 0.25rem; padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .tab {
+      padding: 0.4rem 0.75rem; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 600; color: var(--color-text-muted);
+    }
+    .tab.active {
+      background: var(--color-primary-light); color: var(--color-primary);
+    }
+    .result-scroll {
+      flex: 1; overflow: auto; padding: 0.85rem 1rem;
+      font-size: 0.88rem; line-height: 1.55;
+    }
+    .result-line {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      padding: 0.55rem 0.65rem;
+      border-radius: var(--radius-sm);
+      margin-bottom: 0.35rem;
+      border: 1px solid transparent;
+    }
+    .result-line:hover, .result-line.selected {
+      background: var(--color-primary-light);
+      border-color: var(--color-output-border);
+    }
+    .conf {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--color-success);
+      font-weight: 500;
+      align-self: center;
+    }
+    .conf.mid { color: var(--color-warning); }
+    .result-footer {
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--color-border);
+      display: flex; gap: 0.45rem;
+    }
+    .btn-sm {
+      flex: 1;
+      justify-content: center;
+      padding: 0.55rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    /* Export frame */
+    .export-main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      padding: 0 1.75rem 1.75rem;
+      min-height: 0;
+    }
+    .panel {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .panel-h {
+      padding: 0.9rem 1.15rem;
+      border-bottom: 1px solid var(--color-border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .panel-h h2 {
+      margin: 0; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em;
+    }
+    .panel-body {
+      flex: 1; padding: 1.1rem 1.15rem; overflow: auto;
+      font-size: 0.88rem; line-height: 1.6; color: var(--color-text);
+    }
+    .panel-body.mono {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      background: var(--color-output-bg);
+      color: #312e81;
+      white-space: pre-wrap;
+    }
+    .export-actions {
+      display: flex; gap: 0.5rem; padding: 0 1.75rem 1.5rem; flex-wrap: wrap;
+    }
+
+    /* Mobile */
+    .mobile-app .topbar { padding: 0.85rem 1rem; }
+    .mobile-hero {
+      padding: 1.25rem 1.15rem 0.5rem;
+      text-align: center;
+    }
+    .mobile-hero h1 {
+      margin: 0 0 0.4rem;
+      font-size: 1.45rem;
+      letter-spacing: -0.03em;
+    }
+    .mobile-hero p {
+      margin: 0;
+      font-size: 0.88rem;
+      color: var(--color-text-muted);
+      line-height: 1.5;
+    }
+    .mobile-card {
+      margin: 1rem 1rem 0;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      padding: 1.25rem;
+    }
+    .capture {
+      height: 160px;
+      border-radius: var(--radius-md);
+      border: 2px dashed var(--color-output-border);
+      background: var(--color-output-bg);
+      display: grid;
+      place-items: center;
+      margin-bottom: 1rem;
+      color: var(--color-primary);
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .mobile-result {
+      margin: 1rem;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      padding: 1rem;
+    }
+    .mobile-result h3 {
+      margin: 0 0 0.5rem;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-text-muted);
+    }
+    .mobile-result p {
+      margin: 0;
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+    .mobile-bottom {
+      margin-top: auto;
+      padding: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      border-top: 1px solid var(--color-border);
+      background: rgba(255,255,255,0.7);
+      backdrop-filter: blur(8px);
+    }
+
+    /* Tokens panel */
+    .tokens {
+      width: 360px;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 24px 48px rgba(0,0,0,0.12);
+      padding: 1.25rem 1.35rem 1.5rem;
+    }
+    .tokens h2 {
+      margin: 0 0 0.25rem;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .tokens .sub {
+      font-size: 12px;
+      color: var(--figma-label);
+      margin-bottom: 1.1rem;
+      line-height: 1.4;
+    }
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+      margin-bottom: 1.15rem;
+    }
+    .swatch {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 11px;
+    }
+    .swatch .chip { height: 36px; }
+    .swatch .meta { padding: 0.35rem 0.45rem; font-family: var(--font-mono); color: #525252; }
+    .token-list {
+      font-size: 12px;
+      line-height: 1.55;
+      color: #404040;
+    }
+    .token-list strong { color: #171717; }
+    .type-sample {
+      margin-top: 1rem;
+      padding: 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg);
+    }
+    .type-sample .t1 { font-size: 22px; font-weight: 700; letter-spacing: -0.03em; }
+    .type-sample .t2 { font-size: 14px; color: var(--color-text-muted); margin-top: 4px; }
+    .type-sample .t3 { font-family: var(--font-mono); font-size: 12px; margin-top: 8px; color: #4338ca; }
+
+    /* Spec annotations */
+    .spec-row { margin-top: 40px; }
+    .spec-card {
+      width: 1280px;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 24px 48px rgba(0,0,0,0.12);
+      padding: 28px 32px 36px;
+    }
+    .spec-card h2 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .spec-card .lead {
+      margin: 0 0 20px;
+      color: var(--figma-label);
+      font-size: 13px;
+      max-width: 720px;
+      line-height: 1.5;
+    }
+    .spec-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+    .spec-item {
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: var(--color-bg);
+    }
+    .spec-item h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .spec-item p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--color-text-muted);
+      line-height: 1.5;
+    }
+    .spec-item code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--color-primary);
+    }
+
+    svg.icon { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+</head>
+<body>
+  <div class="board" id="board">
+    <div class="board-header">
+      <h1>localOCR — Design frames</h1>
+      <p>
+        Visual language adapted from <code>setcalculators.com</code>:
+        DM Sans + JetBrains Mono, indigo primary <code>#4f46e5</code>, soft dual radial gradients,
+        pill controls, 12–20px radii, privacy-first utility chrome.
+      </p>
+    </div>
+
+    <!-- ROW 0: Tokens + Landing -->
+    <div class="row">
+      <div class="frame-wrap">
+        <div class="frame-label">Design tokens <span class="frame-meta">Foundation</span></div>
+        <div class="tokens" id="frame-tokens">
+          <h2>localOCR / Tokens</h2>
+          <div class="sub">Mirror of setcalculators light theme with OCR-specific success/warning for confidence.</div>
+          <div class="swatch-grid">
+            <div class="swatch"><div class="chip" style="background:#4f46e5"></div><div class="meta">primary #4f46e5</div></div>
+            <div class="swatch"><div class="chip" style="background:#06b6d4"></div><div class="meta">accent #06b6d4</div></div>
+            <div class="swatch"><div class="chip" style="background:#f8fafc;border-bottom:1px solid #e2e8f0"></div><div class="meta">bg #f8fafc</div></div>
+            <div class="swatch"><div class="chip" style="background:#0f172a"></div><div class="meta">text #0f172a</div></div>
+            <div class="swatch"><div class="chip" style="background:#eef2ff"></div><div class="meta">primary-light</div></div>
+            <div class="swatch"><div class="chip" style="background:#10b981"></div><div class="meta">success conf</div></div>
+          </div>
+          <div class="token-list">
+            <div><strong>Radius</strong> sm 8 · md 12 · lg 20 · pills 999</div>
+            <div><strong>Shadow</strong> sm / md / lg indigo tint</div>
+            <div><strong>Type</strong> DM Sans 400–700 · Mono JetBrains</div>
+            <div><strong>Density</strong> comfortable tool UI, max content 1100px</div>
+          </div>
+          <div class="type-sample">
+            <div class="t1">Extract text privately</div>
+            <div class="t2">Runs entirely in your browser — files never upload.</div>
+            <div class="t3">engine: paddle-onnx · backend: webgpu</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame-wrap">
+        <div class="frame-label">01 — Landing / Home <span class="frame-meta">1280 × 800</span></div>
+        <div class="frame frame-desktop" id="frame-landing">
+          <div class="app">
+            <header class="topbar">
+              <div class="brand">
+                <div class="logo-mark">lO</div>
+                <div class="brand-text">
+                  <span class="brand-name">localOCR</span>
+                  <span class="brand-tag">On-device document text</span>
+                </div>
+              </div>
+              <div class="top-actions">
+                <span class="pill soft"><span class="dot"></span> On-device</span>
+                <span class="pill">WebGPU ready</span>
+                <span class="pill">How it works</span>
+              </div>
+            </header>
+            <main class="landing-main">
+              <div class="hero">
+                <h1>OCR that never leaves your browser</h1>
+                <p>Drop a PDF or image. Models run locally with bounding boxes and confidence scores — no account, no upload.</p>
+              </div>
+              <div class="drop-card">
+                <div class="dropzone">
+                  <div class="drop-icon">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M20 16v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/></svg>
+                  </div>
+                  <h2>Drop PDF or image here</h2>
+                  <p>Digital PDFs extract instantly; scans use on-device OCR.</p>
+                  <div class="btn-row">
+                    <span class="btn btn-primary">Choose files</span>
+                    <span class="btn btn-secondary">Paste from clipboard</span>
+                  </div>
+                </div>
+                <div class="formats">
+                  Supports
+                  <span>PDF</span><span>PNG</span><span>JPEG</span><span>WebP</span>
+                </div>
+              </div>
+              <div class="trust-row">
+                <div class="trust">
+                  <strong>Private by default</strong>
+                  <span>Pixels stay in your tab. Only model weights download from the CDN.</span>
+                </div>
+                <div class="trust">
+                  <strong>Smart PDF path</strong>
+                  <span>Text-layer pages skip OCR for speed and perfect fidelity.</span>
+                </div>
+                <div class="trust">
+                  <strong>Structured export</strong>
+                  <span>TXT, Markdown, and JSON with boxes for downstream tools.</span>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 1: Workspace -->
+    <div class="row">
+      <div class="frame-wrap">
+        <div class="frame-label">02 — Workspace <span class="frame-meta">1280 × 800 · primary flow</span></div>
+        <div class="frame frame-desktop" id="frame-workspace">
+          <div class="app">
+            <header class="topbar" style="padding-bottom:0.85rem">
+              <div class="brand">
+                <div class="logo-mark">lO</div>
+                <div class="brand-text">
+                  <span class="brand-name">localOCR</span>
+                  <span class="brand-tag">invoice_scan.pdf · 3 pages</span>
+                </div>
+              </div>
+              <div class="top-actions">
+                <span class="pill soft"><span class="dot"></span> On-device</span>
+                <span class="pill">Paddle · WebGPU</span>
+                <span class="pill">EN</span>
+                <span class="pill primary">Export</span>
+              </div>
+            </header>
+            <div class="ws-body">
+              <aside class="ws-side">
+                <div class="ws-side-h">Pages</div>
+                <div class="thumb-list">
+                  <div class="thumb active">
+                    <div class="thumb-preview">
+                      <div class="line" style="top:18%"></div>
+                      <div class="line" style="top:32%"></div>
+                      <div class="line" style="top:46%;width:55%"></div>
+                      <div class="line" style="top:62%"></div>
+                    </div>
+                    <div class="thumb-meta"><span>Page 1</span><span class="badge-ok">Done</span></div>
+                  </div>
+                  <div class="thumb">
+                    <div class="thumb-preview">
+                      <div class="line" style="top:22%"></div>
+                      <div class="line" style="top:38%;width:70%"></div>
+                      <div class="line" style="top:54%"></div>
+                    </div>
+                    <div class="thumb-meta"><span>Page 2</span><span style="color:var(--color-primary)">Running</span></div>
+                  </div>
+                  <div class="thumb">
+                    <div class="thumb-preview">
+                      <div class="line" style="top:28%"></div>
+                      <div class="line" style="top:44%"></div>
+                    </div>
+                    <div class="thumb-meta"><span>Page 3</span><span>Queued</span></div>
+                  </div>
+                </div>
+              </aside>
+              <section class="ws-center">
+                <div class="ws-toolbar">
+                  <div class="tool-group">
+                    <div class="tool active" title="Select">↖</div>
+                    <div class="tool" title="Region">▭</div>
+                    <div class="tool" title="Pan">✥</div>
+                    <div class="tool" title="Zoom">＋</div>
+                  </div>
+                  <div class="tool-group">
+                    <span class="pill" style="box-shadow:none;padding:0.35rem 0.7rem">Boxes on</span>
+                    <span class="pill" style="box-shadow:none;padding:0.35rem 0.7rem">Conf. heat</span>
+                  </div>
+                </div>
+                <div class="ws-canvas-wrap">
+                  <div class="doc-page">
+                    <h3>Invoice #1842</h3>
+                    <div class="fake-line w80"></div>
+                    <div class="fake-line w95"></div>
+                    <div class="fake-line w60"></div>
+                    <div class="fake-line w90"></div>
+                    <div class="fake-line w95"></div>
+                    <div class="fake-line w70"></div>
+                    <div class="fake-line w90"></div>
+                    <div class="fake-line w85"></div>
+                    <div class="bbox" style="left:1.75rem;top:2rem;width:42%;height:1.35rem"></div>
+                    <div class="bbox hi" style="left:1.75rem;top:3.85rem;width:78%;height:0.85rem"></div>
+                    <div class="bbox" style="left:1.75rem;top:5.05rem;width:55%;height:0.85rem"></div>
+                    <div class="bbox" style="left:1.75rem;top:7.45rem;width:70%;height:0.85rem"></div>
+                  </div>
+                </div>
+                <div class="ws-status">
+                  <span>Page 2 of 3 · detecting lines</span>
+                  <div class="progress"><i></i></div>
+                  <span class="pill" style="padding:0.3rem 0.7rem">Cancel</span>
+                </div>
+              </section>
+              <aside class="ws-results">
+                <div class="tabs">
+                  <div class="tab active">Text</div>
+                  <div class="tab">Markdown</div>
+                  <div class="tab">JSON</div>
+                </div>
+                <div class="result-scroll">
+                  <div class="result-line selected">
+                    <span>Invoice #1842</span>
+                    <span class="conf">0.98</span>
+                  </div>
+                  <div class="result-line">
+                    <span>Acme Supplies Co.</span>
+                    <span class="conf">0.96</span>
+                  </div>
+                  <div class="result-line">
+                    <span>Date: 12 Mar 2026</span>
+                    <span class="conf">0.94</span>
+                  </div>
+                  <div class="result-line">
+                    <span>Subtotal …………………… $420.00</span>
+                    <span class="conf mid">0.81</span>
+                  </div>
+                  <div class="result-line">
+                    <span>Tax (8%) …………………… $33.60</span>
+                    <span class="conf">0.91</span>
+                  </div>
+                  <div class="result-line">
+                    <span>Total due ………………… $453.60</span>
+                    <span class="conf">0.93</span>
+                  </div>
+                </div>
+                <div class="result-footer">
+                  <span class="btn btn-secondary btn-sm">Copy</span>
+                  <span class="btn btn-primary btn-sm">Export…</span>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 2: Export + Mobile -->
+    <div class="row">
+      <div class="frame-wrap">
+        <div class="frame-label">03 — Export <span class="frame-meta">1280 × 800</span></div>
+        <div class="frame frame-desktop" id="frame-export">
+          <div class="app">
+            <header class="topbar">
+              <div class="brand">
+                <div class="logo-mark">lO</div>
+                <div class="brand-text">
+                  <span class="brand-name">Export results</span>
+                  <span class="brand-tag">Nothing left this device</span>
+                </div>
+              </div>
+              <div class="top-actions">
+                <span class="pill">← Back to workspace</span>
+                <span class="pill soft"><span class="dot"></span> On-device</span>
+              </div>
+            </header>
+            <div class="export-main">
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>Markdown</h2>
+                  <span class="pill soft" style="padding:0.3rem 0.65rem">Preview</span>
+                </div>
+                <div class="panel-body">
+                  <p><strong>Invoice #1842</strong></p>
+                  <p>Acme Supplies Co.<br />Date: 12 Mar 2026</p>
+                  <p>Subtotal …………………… $420.00<br />Tax (8%) …………………… $33.60<br /><strong>Total due ………………… $453.60</strong></p>
+                  <p style="color:var(--color-text-muted);font-size:0.82rem;margin-top:1.5rem">Generated locally · engine paddle-onnx · 3 pages</p>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>JSON structure</h2>
+                  <span class="pill soft" style="padding:0.3rem 0.65rem">Schema v1</span>
+                </div>
+                <div class="panel-body mono">{
+  "version": 1,
+  "engine": "paddle-onnx",
+  "pages": [{
+    "index": 0,
+    "blocks": [{
+      "text": "Invoice #1842",
+      "bbox": { "x": 48, "y": 64, "w": 180, "h": 28 },
+      "confidence": 0.98,
+      "level": "line"
+    }]
+  }]
+}</div>
+              </div>
+            </div>
+            <div class="export-actions">
+              <span class="btn btn-secondary">Download .txt</span>
+              <span class="btn btn-secondary">Download .md</span>
+              <span class="btn btn-primary">Download .json</span>
+              <span class="btn btn-secondary">Copy all</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame-wrap">
+        <div class="frame-label">04 — Mobile home <span class="frame-meta">390 × 844</span></div>
+        <div class="frame frame-mobile" id="frame-mobile">
+          <div class="app mobile-app">
+            <header class="topbar">
+              <div class="brand">
+                <div class="logo-mark" style="width:32px;height:32px;font-size:12px;border-radius:9px">lO</div>
+                <div class="brand-text">
+                  <span class="brand-name">localOCR</span>
+                  <span class="brand-tag">On-device</span>
+                </div>
+              </div>
+              <span class="pill soft" style="padding:0.35rem 0.65rem"><span class="dot"></span> Local</span>
+            </header>
+            <div class="mobile-hero">
+              <h1>Scan or import</h1>
+              <p>OCR runs on this phone. Nothing is uploaded.</p>
+            </div>
+            <div class="mobile-card">
+              <div class="capture">
+                <div>
+                  <div style="font-size:1.6rem;margin-bottom:0.35rem">◎</div>
+                  Tap to capture
+                </div>
+              </div>
+              <div class="btn-row">
+                <span class="btn btn-primary" style="flex:1;justify-content:center">Choose photo</span>
+              </div>
+              <div class="formats" style="margin-top:0.85rem">PDF · PNG · JPEG</div>
+            </div>
+            <div class="mobile-result">
+              <h3>Last result</h3>
+              <p>Invoice #1842<br />Total due $453.60</p>
+            </div>
+            <div class="mobile-bottom">
+              <span class="btn btn-secondary btn-sm">Copy</span>
+              <span class="btn btn-primary btn-sm">Share text</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spec notes -->
+    <div class="row spec-row">
+      <div class="frame-wrap">
+        <div class="frame-label">05 — Interaction & layout specs <span class="frame-meta">Documentation frame</span></div>
+        <div class="spec-card" id="frame-specs">
+          <h2>Component & layout rules</h2>
+          <p class="lead">
+            Aligns localOCR UI with setcalculators.com patterns so the product feels like a calm, trustworthy browser tool —
+            not a generic AI dashboard.
+          </p>
+          <div class="spec-grid">
+            <div class="spec-item">
+              <h3>Inspiration mapping</h3>
+              <p>
+                Dual radial page wash · pill nav · surface cards · indigo primary · cyan accent ·
+                <code>max-width: 1100px</code> content rhythm · privacy copy near actions.
+              </p>
+            </div>
+            <div class="spec-item">
+              <h3>Workspace grid</h3>
+              <p>
+                <code>200 | 1fr | 340</code> desktop columns. Page rail left, canvas center, results right.
+                Status bar sticks to canvas bottom with cancel always visible.
+              </p>
+            </div>
+            <div class="spec-item">
+              <h3>Confidence UI</h3>
+              <p>
+                Mono scores; green ≥0.9, amber 0.75–0.9, muted below. Hovering a result line highlights the matching bbox (cyan).
+              </p>
+            </div>
+            <div class="spec-item">
+              <h3>Buttons</h3>
+              <p>
+                Primary = solid indigo pill + soft indigo shadow.
+                Secondary = white surface + 1.5px slate border. Never all-caps.
+              </p>
+            </div>
+            <div class="spec-item">
+              <h3>Privacy affordances</h3>
+              <p>
+                Persistent “On-device” pill with green pulse dot on every chrome level.
+                Export screen repeats “Nothing left this device”.
+              </p>
+            </div>
+            <div class="spec-item">
+              <h3>Empty → active</h3>
+              <p>
+                Landing is a single focused drop card (like setcalculators’ calculator card).
+                Workspace only appears after a file is accepted — no empty multi-pane clutter.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

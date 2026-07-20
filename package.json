@@ -1,0 +1,21 @@
+{
+  "name": "localocr",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Privacy-first browser-local OCR toolkit",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @localocr/web",
+    "build": "npm run build -w @localocr/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "preview": "npm run preview -w @localocr/web"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

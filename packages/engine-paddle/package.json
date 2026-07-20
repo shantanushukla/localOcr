@@ -1,0 +1,22 @@
+{
+  "name": "@localocr/engine-paddle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@localocr/ocr-core": "*",
+    "onnxruntime-web": "^1.22.0",
+    "ppu-paddle-ocr": "^6.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

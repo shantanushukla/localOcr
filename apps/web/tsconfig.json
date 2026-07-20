@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@localocr/ocr-core": ["../../packages/ocr-core/src/index.ts"],
+      "@localocr/engine-tesseract": ["../../packages/engine-tesseract/src/index.ts"],
+      "@localocr/engine-paddle": ["../../packages/engine-paddle/src/index.ts"],
+      "@localocr/engine-digital-pdf": ["../../packages/engine-digital-pdf/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,4 @@
+# Cloudflare Pages project config (optional local wrangler pages dev)
+name = "localocr"
+compatibility_date = "2026-07-20"
+pages_build_output_dir = "apps/web/dist"
