@@ -16,7 +16,9 @@
     "test:all": "npm run test && npm run build && node scripts/check-asset-size.mjs",
     "test:ci": "npm run test:all && npm run test:e2e",
     "check:assets": "node scripts/check-asset-size.mjs",
-    "preview": "npm run preview -w @localocr/web"
+    "preview": "npm run preview -w @localocr/web",
+    "pages:dev": "npm run build && npx wrangler pages dev apps/web/dist",
+    "pages:deploy": "npm run build && npm run check:assets && npx wrangler pages deploy apps/web/dist --project-name=localocr"
   },
   "engines": {
     "node": ">=20"

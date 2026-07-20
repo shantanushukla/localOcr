@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit · build · asset gate · e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests, build, 25 MiB asset gate, e2e
+        run: npm run test:ci
+        env:
+          CI: true
+
+  deploy:
+    name: Deploy Cloudflare Pages
+    needs: test
+    # Runs only on main when CLOUDFLARE_API_TOKEN is configured as a repo secret.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Check Cloudflare secrets
+        id: cf
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping deploy: set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cf.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.cf.outputs.ready == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.cf.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Build
+        if: steps.cf.outputs.ready == 'true'
+        run: npm run build
+
+      - name: Asset size gate
+        if: steps.cf.outputs.ready == 'true'
+        run: npm run check:assets
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.cf.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy apps/web/dist --project-name=localocr --branch=main --commit-dirty=true

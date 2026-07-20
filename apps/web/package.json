@@ -17,6 +17,7 @@
     "@localocr/engine-paddle": "*",
     "@localocr/engine-tesseract": "*",
     "@localocr/ocr-core": "*",
+    "pdf-lib": "^1.17.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

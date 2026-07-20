@@ -6,3 +6,5 @@ export * from './confidence.js';
 export * from './preprocess.js';
 export * from './history.js';
 export * from './mock-engine.js';
+export * from './cer.js';
+export * from './searchable-pdf.js';

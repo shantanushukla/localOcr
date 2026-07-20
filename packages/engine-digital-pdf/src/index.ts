@@ -79,26 +79,31 @@ export async function preparePdf(
 
 export async function prepareImage(
   file: File | Blob,
-  opts: { preprocess?: boolean } = {},
+  opts: { preprocess?: boolean; deskew?: boolean } = {},
 ): Promise<PageSource> {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
     img.src = url;
     await img.decode();
-    const width = img.naturalWidth;
-    const height = img.naturalHeight;
-    const canvas = document.createElement('canvas');
+    let width = img.naturalWidth;
+    let height = img.naturalHeight;
+    let canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D unavailable');
     ctx.drawImage(img, 0, 0);
 
-    if (opts.preprocess) {
-      const { applyPreprocessToImageData } = await import('@localocr/ocr-core');
-      const imgData = ctx.getImageData(0, 0, width, height);
-      ctx.putImageData(applyPreprocessToImageData(imgData), 0, 0);
+    if (opts.preprocess || opts.deskew) {
+      const { canvasFromSource } = await import('@localocr/ocr-core');
+      canvas = canvasFromSource(canvas, width, height, {
+        grayscale: Boolean(opts.preprocess),
+        contrast: opts.preprocess ? 1.15 : 1,
+        deskew: Boolean(opts.deskew),
+      });
+      width = canvas.width;
+      height = canvas.height;
     }
 
     const previewUrl = canvas.toDataURL('image/png');

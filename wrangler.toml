@@ -1,4 +1,9 @@
-# Cloudflare Pages project config (optional local wrangler pages dev)
+# Cloudflare Pages — static SPA only (OCR runs in the browser, never on Workers)
 name = "localocr"
 compatibility_date = "2026-07-20"
 pages_build_output_dir = "apps/web/dist"
+
+# Optional later: R2 for large model packs (>25 MiB single-file limit workaround)
+# [[r2_buckets]]
+# binding = "MODELS"
+# bucket_name = "localocr-models"

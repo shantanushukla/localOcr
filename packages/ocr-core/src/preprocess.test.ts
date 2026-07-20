@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyPreprocessToImageData } from './preprocess.js';
+import {
+  applyPreprocessToImageData,
+  estimateSkewDegrees,
+} from './preprocess.js';
 
 /** Minimal ImageData stand-in for Node vitest. */
 function makeImageData(w: number, h: number): ImageData {
@@ -37,5 +40,24 @@ describe('applyPreprocessToImageData', () => {
       brightness: 50,
     });
     expect(out.data[0]).toBe(150);
+  });
+});
+
+describe('estimateSkewDegrees', () => {
+  it('returns near-zero for upright horizontal bars', () => {
+    const w = 80;
+    const h = 40;
+    const data = makeImageData(w, h);
+    // white bg
+    data.data.fill(255);
+    // dark horizontal line mid page
+    for (let x = 10; x < 70; x++) {
+      for (let y = 18; y < 22; y++) {
+        const i = (y * w + x) * 4;
+        data.data[i] = data.data[i + 1] = data.data[i + 2] = 0;
+      }
+    }
+    const angle = estimateSkewDegrees(data, 5, 1);
+    expect(Math.abs(angle)).toBeLessThanOrEqual(1);
   });
 });

@@ -4,9 +4,11 @@ import {
   JobOrchestrator,
   confidenceCssClass,
   cropCanvas,
+  downloadPdfBytes,
   jobToExportDocument,
   jobToMarkdown,
   jobToPlainText,
+  jobToSearchablePdf,
   loadHistory,
   makeHistoryEntry,
   saveHistoryEntry,
@@ -46,9 +48,11 @@ export function App() {
   const [engineChoice, setEngineChoice] = useState<EngineChoice>('tesseract');
   const [language, setLanguage] = useState('eng');
   const [preprocess, setPreprocess] = useState(true);
+  const [deskew, setDeskew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [runtimeMode, setRuntimeMode] = useState<'webgpu' | 'wasm' | 'unknown'>('unknown');
   const [job, setJob] = useState<OcrJob | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedBlock, setSelectedBlock] = useState<number | null>(null);
@@ -78,11 +82,21 @@ export function App() {
     setHistory(loadHistory());
   }, []);
 
+  useEffect(() => {
+    // Detect WebGPU once for honest status chip (AC6).
+    const hasGpu =
+      typeof navigator !== 'undefined' &&
+      'gpu' in navigator &&
+      typeof (navigator as Navigator & { gpu?: unknown }).gpu !== 'undefined';
+    setRuntimeMode(hasGpu ? 'webgpu' : 'wasm');
+  }, []);
+
   const ensureEngine = useCallback(async (choice: EngineChoice, lang: string) => {
     const matchId = choice === 'paddle' ? 'ppu' : 'tesseract';
+    const preferWebGpu = runtimeMode !== 'wasm';
     if (engineRef.current?.id.startsWith(matchId) && choice === 'tesseract') {
       // re-init language if changed
-      await engineRef.current.init({ language: lang, preferWebGpu: true });
+      await engineRef.current.init({ language: lang, preferWebGpu });
       return engineRef.current;
     }
     if (engineRef.current?.id.startsWith(matchId) && choice === 'paddle') {
@@ -91,17 +105,17 @@ export function App() {
     if (engineRef.current) await engineRef.current.dispose();
     setStatus(
       choice === 'paddle'
-        ? 'Loading Paddle OCR models (first run may download)…'
+        ? `Loading Paddle OCR (${preferWebGpu ? 'WebGPU preferred' : 'WASM mode'})…`
         : `Loading Tesseract (${lang})…`,
     );
     const engine = await createEngine(choice);
-    await engine.init({ preferWebGpu: true, language: lang });
+    await engine.init({ preferWebGpu, language: lang });
     engineRef.current = engine;
     orchRef.current = new JobOrchestrator(engine, {
       onJobUpdate: (j) => setJob(j),
     });
     return engine;
-  }, []);
+  }, [runtimeMode]);
 
   const persistJob = useCallback((j: OcrJob) => {
     if (j.status !== 'done') return;
@@ -149,7 +163,7 @@ export function App() {
           );
         } else if (isImageFile(file)) {
           setStatus('Preparing image…');
-          pages = [await prepareImage(file, { preprocess })];
+          pages = [await prepareImage(file, { preprocess, deskew })];
           if (pages[0]?.image instanceof HTMLCanvasElement) {
             canvasSources.current.set(0, pages[0].image);
           }
@@ -169,7 +183,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [engineChoice, language, preprocess, ensureEngine, persistJob],
+    [engineChoice, language, preprocess, deskew, ensureEngine, persistJob],
   );
 
   const runRegionOcr = useCallback(async () => {
@@ -253,6 +267,31 @@ export function App() {
     URL.revokeObjectURL(a.href);
   };
 
+  const downloadSearchablePdf = async () => {
+    if (!job) return;
+    setBusy(true);
+    setStatus('Building searchable PDF…');
+    try {
+      const exportDoc = jobToExportDocument(job);
+      const pageImages = new Map<number, Uint8Array>();
+      for (const [idx, canvas] of canvasSources.current) {
+        const dataUrl = canvas.toDataURL('image/png');
+        const bin = atob(dataUrl.split(',')[1] ?? '');
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        pageImages.set(idx, bytes);
+      }
+      const pdfBytes = await jobToSearchablePdf(exportDoc, { pageImages });
+      const base = (job.fileName || 'ocr').replace(/\.[^.]+$/, '');
+      downloadPdfBytes(pdfBytes, `${base}-searchable.pdf`);
+      setStatus('Searchable PDF downloaded.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const pointerToImage = (clientX: number, clientY: number) => {
     const el = stageRef.current;
     if (!el || !page?.width || !page.height) return { x: 0, y: 0 };
@@ -280,8 +319,19 @@ export function App() {
           </div>
         </div>
         <div className="top-actions">
-          <span className="pill soft" title="Processing stays in this browser tab">
+          <span className="pill soft" title="Processing stays in this browser tab" data-testid="on-device-badge">
             <span className="dot" /> On-device
+          </span>
+          <span
+            className="pill ghost"
+            title={
+              runtimeMode === 'webgpu'
+                ? 'WebGPU available — Paddle will prefer GPU acceleration'
+                : 'WebGPU unavailable — engines use WASM (slower but works)'
+            }
+            data-testid="runtime-mode"
+          >
+            {runtimeMode === 'webgpu' ? 'WebGPU ready' : runtimeMode === 'wasm' ? 'WASM mode' : '…'}
           </span>
           <select
             className="engine-select"
@@ -388,6 +438,10 @@ export function App() {
                     Optional session history is stored only in this browser&apos;s{' '}
                     <code>localStorage</code>. Clear it anytime below.
                   </p>
+                  <p>
+                    Analytics are off by default. No first-party document upload endpoint exists —
+                    network activity is limited to static assets and model weights from the CDN.
+                  </p>
                 </>
               )}
               {panel === 'history' && (
@@ -480,6 +534,14 @@ export function App() {
                 onChange={(e) => setPreprocess(e.target.checked)}
               />
               Enhance images (contrast / grayscale) before OCR
+            </label>
+            <label className="toggle-row">
+              <input
+                type="checkbox"
+                checked={deskew}
+                onChange={(e) => setDeskew(e.target.checked)}
+              />
+              Auto-deskew (small rotation correction)
             </label>
             <div className="formats">
               Supports <span>PDF</span>
@@ -722,6 +784,16 @@ export function App() {
                 </button>
                 <button type="button" className="btn btn-primary" onClick={downloadActive}>
                   Download
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy || !job}
+                  onClick={() => void downloadSearchablePdf()}
+                  title="Image pages + invisible text layer for search/select"
+                  data-testid="download-searchable-pdf"
+                >
+                  PDF
                 </button>
               </div>
             </aside>
