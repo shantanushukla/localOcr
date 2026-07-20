@@ -17,8 +17,10 @@ Open the URL Vite prints (usually `http://localhost:5173`).
 |---------|---------|
 | `npm run dev` | Local Vite app |
 | `npm test` | Unit tests (all workspaces) |
+| `npm run test:e2e` | Playwright browser e2e (Chromium) |
+| `npm run test:ci` | Unit + build + asset gate + e2e |
 | `npm run build` | Production build → `apps/web/dist` |
-| `npm run test:all` | Tests + build + Pages 25 MiB asset gate |
+| `npm run test:all` | Unit tests + build + Pages 25 MiB asset gate |
 | `npm run check:assets` | Asset size gate only (after build) |
 
 ## Features (v1)
@@ -34,6 +36,7 @@ Open the URL Vite prints (usually `http://localhost:5173`).
 
 ```
 apps/web                 # Vite + React SPA
+apps/web/e2e             # Playwright smoke tests + fixtures
 packages/ocr-core        # Job model, orchestrator, export, history, preprocess
 packages/engine-tesseract
 packages/engine-paddle
@@ -43,6 +46,17 @@ plan.md                  # Architecture plan
 research/                # SPIKE + clones (clones gitignored)
 scripts/check-asset-size.mjs
 ```
+
+### E2E
+
+```bash
+# first time on a machine:
+npx playwright install chromium
+
+npm run test:e2e
+```
+
+Fixtures: `apps/web/e2e/fixtures/invoice-sample.png`, `hello-digital.pdf`.
 
 ## Privacy
 

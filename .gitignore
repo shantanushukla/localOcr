@@ -31,6 +31,9 @@ research/*
 coverage/
 playwright-report/
 test-results/
+blob-report/
+apps/web/test-results/
+apps/web/playwright-report/
 
 # Models (downloaded at runtime or via CDN)
 public/models/**
