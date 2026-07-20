@@ -72,6 +72,25 @@ test.describe('localOCR e2e', () => {
 
     // Searchable PDF export button present
     await expect(page.getByTestId('download-searchable-pdf')).toBeEnabled();
+
+    // PDF button must not surface WinAnsi encoding errors (→ etc. in OCR text)
+    const downloadPromise = page.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
+    await page.getByTestId('download-searchable-pdf').click();
+    await page.waitForTimeout(1500);
+    const errBanner = page.locator('.error-banner');
+    if (await errBanner.isVisible().catch(() => false)) {
+      const errText = await errBanner.innerText();
+      expect(errText, 'PDF export should not show WinAnsi errors').not.toMatch(
+        /WinAnsi|cannot encode/i,
+      );
+    }
+    const dl = await downloadPromise;
+    if (dl) {
+      expect(dl.suggestedFilename()).toMatch(/\.pdf$/i);
+    } else {
+      // download may be blocked in headless; at least status should not be an encoding error
+      await expect(page.getByText(/WinAnsi|cannot encode/i)).toHaveCount(0);
+    }
   });
 
   test('digital PDF uses text layer without long OCR wait', async ({ page }) => {

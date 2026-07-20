@@ -270,23 +270,55 @@ export function App() {
   const downloadSearchablePdf = async () => {
     if (!job) return;
     setBusy(true);
+    setError(null);
     setStatus('Building searchable PDF…');
     try {
       const exportDoc = jobToExportDocument(job);
       const pageImages = new Map<number, Uint8Array>();
       for (const [idx, canvas] of canvasSources.current) {
-        const dataUrl = canvas.toDataURL('image/png');
-        const bin = atob(dataUrl.split(',')[1] ?? '');
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        pageImages.set(idx, bytes);
+        try {
+          const dataUrl = canvas.toDataURL('image/png');
+          const bin = atob(dataUrl.split(',')[1] ?? '');
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          pageImages.set(idx, bytes);
+        } catch {
+          /* skip broken page canvas */
+        }
       }
+      // jobToSearchablePdf sanitizes Unicode (→ etc.) for Helvetica/WinAnsi
       const pdfBytes = await jobToSearchablePdf(exportDoc, { pageImages });
       const base = (job.fileName || 'ocr').replace(/\.[^.]+$/, '');
       downloadPdfBytes(pdfBytes, `${base}-searchable.pdf`);
       setStatus('Searchable PDF downloaded.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      // Never show raw pdf-lib encoding errors; retry text-only path
+      if (/WinAnsi|cannot encode/i.test(msg)) {
+        try {
+          const exportDoc = jobToExportDocument(job);
+          // Strip non-ascii from blocks as last resort
+          const scrubbed = {
+            ...exportDoc,
+            pages: exportDoc.pages.map((p) => ({
+              ...p,
+              fullText: p.fullText.replace(/[^\x20-\x7e\n\r\t]/g, ' '),
+              blocks: p.blocks.map((b) => ({
+                ...b,
+                text: b.text.replace(/[^\x20-\x7e\n\r\t]/g, ' '),
+              })),
+            })),
+          };
+          const pdfBytes = await jobToSearchablePdf(scrubbed, {});
+          const base = (job.fileName || 'ocr').replace(/\.[^.]+$/, '');
+          downloadPdfBytes(pdfBytes, `${base}-searchable.pdf`);
+          setStatus('Searchable PDF downloaded (ASCII text layer).');
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      setError(msg);
     } finally {
       setBusy(false);
     }

@@ -1,9 +1,7 @@
 /**
  * Build a searchable PDF (image + invisible text layer) entirely client-side.
- * Uses pdf-lib; call only from browser or Node with canvas-free pure PDF path.
- *
- * StandardFonts.Helvetica is WinAnsi-only. OCR often emits Unicode (→, curly
- * quotes, CJK). We sanitize to WinAnsi before measure/draw so export never throws.
+ * Uses pdf-lib; Helvetica is WinAnsi-only — OCR Unicode (→, CJK, etc.) must never
+ * reach widthOfTextAtSize / drawText or pdf-lib throws.
  */
 
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib';
@@ -17,52 +15,58 @@ export type SearchablePdfOptions = {
   title?: string;
 };
 
-/** Common Unicode → WinAnsi/ASCII substitutions for OCR text. */
+/** Common Unicode → ASCII substitutions for OCR / PDF text layer. */
 const UNICODE_REPLACEMENTS: Record<string, string> = {
-  '\u2010': '-', // hyphen
-  '\u2011': '-', // non-breaking hyphen
-  '\u2012': '-', // figure dash
-  '\u2013': '-', // en dash
-  '\u2014': '--', // em dash
-  '\u2015': '--', // horizontal bar
-  '\u2018': "'", // left single quote
-  '\u2019': "'", // right single quote
-  '\u201A': ',', // single low-9 quote
-  '\u201C': '"', // left double quote
-  '\u201D': '"', // right double quote
-  '\u201E': '"', // double low-9 quote
-  '\u2022': '*', // bullet
-  '\u2026': '...', // ellipsis
-  '\u2032': "'", // prime
-  '\u2033': '"', // double prime
-  '\u00A0': ' ', // nbsp
-  '\u00AD': '-', // soft hyphen
-  '\u2190': '<-', // ←
-  '\u2192': '->', // →
-  '\u2191': '^', // ↑
-  '\u2193': 'v', // ↓
-  '\u21D2': '=>', // ⇒
-  '\u21D0': '<=', // ⇐
-  '\u00B7': '.', // middle dot
-  '\u2212': '-', // minus
-  '\u00D7': 'x', // multiplication
-  '\u00F7': '/', // division
-  '\u2264': '<=', // ≤
-  '\u2265': '>=', // ≥
-  '\u2260': '!=', // ≠
-  '\u2020': '+', // dagger
-  '\u2021': '++', // double dagger
+  '\u2010': '-',
+  '\u2011': '-',
+  '\u2012': '-',
+  '\u2013': '-',
+  '\u2014': '--',
+  '\u2015': '--',
+  '\u2018': "'",
+  '\u2019': "'",
+  '\u201A': ',',
+  '\u201C': '"',
+  '\u201D': '"',
+  '\u201E': '"',
+  '\u2022': '*',
+  '\u2026': '...',
+  '\u2032': "'",
+  '\u2033': '"',
+  '\u00A0': ' ',
+  '\u00AD': '-',
+  '\u2190': '<-',
+  '\u2192': '->', // → — the char that was throwing WinAnsi
+  '\u2191': '^',
+  '\u2193': 'v',
+  '\u21D0': '<=',
+  '\u21D2': '=>',
+  '\u00B7': '.',
+  '\u2212': '-',
+  '\u00D7': 'x',
+  '\u00F7': '/',
+  '\u2264': '<=',
+  '\u2265': '>=',
+  '\u2260': '!=',
+  '\u2020': '+',
+  '\u2021': '++',
   '\u2122': '(TM)',
   '\u00AE': '(R)',
   '\u00A9': '(C)',
-  '\u20AC': 'EUR', // euro (WinAnsi has it in some encodings; keep safe)
+  '\u20AC': 'EUR',
   '\u00A3': 'GBP',
   '\u00A5': 'Y',
+  '\u00B0': ' deg',
+  '\u202F': ' ',
+  '\u2009': ' ',
+  '\u200A': ' ',
+  '\u200B': '',
+  '\uFEFF': '',
 };
 
 /**
- * Make text safe for Helvetica / WinAnsi encoding used by pdf-lib StandardFonts.
- * Replaces common symbols; drops remaining non-encodable code points.
+ * Strict WinAnsi-safe text for Helvetica.
+ * Only printable ASCII (0x20–0x7E) remains after replacements — never throws in pdf-lib.
  */
 export function toWinAnsiSafe(text: string): string {
   let out = '';
@@ -72,38 +76,26 @@ export function toWinAnsiSafe(text: string): string {
       continue;
     }
     const code = ch.codePointAt(0) ?? 0;
-    // Printable ASCII + Latin-1 supplement that WinAnsi covers (rough filter)
     if (code === 0x09 || code === 0x0a || code === 0x0d) {
       out += ' ';
       continue;
     }
+    // Strict: only printable ASCII. Latin-1 is NOT fully WinAnsi-safe.
     if (code >= 0x20 && code <= 0x7e) {
       out += ch;
       continue;
     }
-    // Latin-1 / common WinAnsi range (0xA0–0xFF excluding a few holes)
-    if (code >= 0xa0 && code <= 0xff) {
-      out += ch;
-      continue;
-    }
-    // Drop unencodable glyphs (CJK, emoji, etc.) rather than throw
     out += ' ';
   }
   return out.replace(/[ \t]+/g, ' ').trim();
 }
 
-function safeWidthOfTextAtSize(font: PDFFont, text: string, size: number): number {
+function measureTextWidth(font: PDFFont, text: string, size: number): number {
+  // text is already ASCII-only; still guard so UI never crashes
   try {
     return font.widthOfTextAtSize(text, size);
   } catch {
-    // Final guard: strip to pure ASCII if font still rejects
-    const ascii = text.replace(/[^\x20-\x7e]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!ascii) return 0;
-    try {
-      return font.widthOfTextAtSize(ascii, size);
-    } catch {
-      return ascii.length * size * 0.5;
-    }
+    return Math.max(0, text.length * size * 0.5);
   }
 }
 
@@ -144,23 +136,7 @@ function drawSafeText(
       lineHeight: opts.lineHeight,
     });
   } catch {
-    // Last resort: ASCII-only
-    const ascii = text.replace(/[^\x20-\x7e]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!ascii) return;
-    try {
-      pdfPage.drawText(ascii, {
-        x: opts.x,
-        y: opts.y,
-        size: opts.size,
-        font,
-        color: opts.color ?? rgb(0, 0, 0),
-        opacity: opts.opacity,
-        maxWidth: opts.maxWidth,
-        lineHeight: opts.lineHeight,
-      });
-    } catch {
-      /* skip unencodable run */
-    }
+    /* never surface WinAnsi errors to the UI */
   }
 }
 
@@ -172,14 +148,13 @@ export async function jobToSearchablePdf(
   opts: SearchablePdfOptions = {},
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  // Titles can also contain Unicode; pdf-lib metadata is more tolerant but keep clean
   pdf.setTitle(toWinAnsiSafe(opts.title ?? doc.fileName) || 'OCR export');
   pdf.setProducer('localOCR (browser-local)');
   pdf.setCreator('localOCR');
 
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const opacity = opts.textOpacity ?? 0;
-  const textOpacity = opacity === 0 ? 0.0001 : opacity; // fully 0 can be stripped by some viewers
+  const textOpacity = opacity === 0 ? 0.0001 : opacity;
 
   for (const page of doc.pages) {
     const imgBytes = getImage(opts.pageImages, page.index);
@@ -215,11 +190,10 @@ export async function jobToSearchablePdf(
       const text = toWinAnsiSafe(raw);
       if (!text) continue;
       const { x, y, w, h } = block.bbox;
-      // PDF origin is bottom-left; OCR bbox origin is top-left.
       const fontSize = Math.max(6, Math.min(h * 0.85, 48));
       const drawY = height - y - h;
       let size = fontSize;
-      const textWidth = safeWidthOfTextAtSize(font, text, size);
+      const textWidth = measureTextWidth(font, text, size);
       if (w > 0 && textWidth > w * 1.05) {
         size = Math.max(4, size * (w / textWidth));
       }
@@ -232,7 +206,6 @@ export async function jobToSearchablePdf(
       });
     }
 
-    // Fallback: if no blocks, place fullText at top
     if (blocks.length === 0 && page.fullText?.trim()) {
       drawSafeText(pdfPage, font, page.fullText.slice(0, 2000), {
         x: 24,

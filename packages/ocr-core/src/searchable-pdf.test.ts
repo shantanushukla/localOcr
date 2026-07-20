@@ -33,12 +33,22 @@ const sample: ExportDocument = {
 describe('toWinAnsiSafe', () => {
   it('replaces arrow and punctuation that break Helvetica', () => {
     expect(toWinAnsiSafe('A → B')).toBe('A -> B');
+    expect(toWinAnsiSafe('\u2192')).toBe('->');
     expect(toWinAnsiSafe('“quoted”')).toBe('"quoted"');
     expect(toWinAnsiSafe('cost ≤ $5')).toMatch(/cost <=/);
   });
 
   it('keeps plain ASCII', () => {
     expect(toWinAnsiSafe('Invoice #1842')).toBe('Invoice #1842');
+  });
+
+  it('never leaves code points above 0x7e', () => {
+    const s = toWinAnsiSafe('café → 東京 €100 “x”');
+    for (const ch of s) {
+      const c = ch.codePointAt(0)!;
+      expect(c).toBeLessThanOrEqual(0x7e);
+      expect(c).toBeGreaterThanOrEqual(0x20);
+    }
   });
 });
 
