@@ -16,9 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # v5+ runs on Node 24 (v4 targets deprecated Node 20)
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -61,10 +62,10 @@ jobs:
             echo "Skipping deploy: set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.cf.outputs.ready == 'true'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.cf.outputs.ready == 'true'
         with:
           node-version: '22'
@@ -84,7 +85,7 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         if: steps.cf.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
