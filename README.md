@@ -64,38 +64,26 @@ Fixtures: `apps/web/e2e/fixtures/` (`invoice-sample.png`, `hello-digital.pdf`, `
 
 ## Deploy (Cloudflare Pages)
 
-### One-time setup
+**Production** ([localocr.pages.dev](https://localocr.pages.dev)) is deployed by **Cloudflare Pages Git integration** on every push to `main`. GitHub Actions only runs tests/build/e2e — it does **not** call Wrangler (avoids dual deploys and API-token breakage).
 
-1. Create a free [Cloudflare](https://dash.cloudflare.com) account.
-2. Authenticate Wrangler:
-
-```bash
-npx wrangler login
-```
-
-3. Deploy:
-
-```bash
-npm run pages:deploy
-```
-
-Or connect the GitHub repo in the Cloudflare dashboard:
+### Cloudflare dashboard (already connected)
 
 | Setting | Value |
 |---------|--------|
+| Production branch | `main` |
 | Build command | `npm ci && npm run build` |
 | Build output directory | `apps/web/dist` |
 | Root directory | `/` (repo root) |
 | Node version | 20+ |
 
-### GitHub Actions deploy (optional)
+### Manual / emergency deploy (local Wrangler OAuth)
 
-Add repository secrets:
+```bash
+npx wrangler login
+npm run pages:deploy
+```
 
-- `CLOUDFLARE_API_TOKEN` — Pages deploy token
-- `CLOUDFLARE_ACCOUNT_ID` — account id from the CF dashboard
-
-And repository variable `CLOUDFLARE_ACCOUNT_ID` (same value) so the deploy job is enabled on `main`.
+Requires a Cloudflare account with access to the `localocr` Pages project. Do **not** put Wrangler OAuth tokens into GitHub secrets — use a dedicated [API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with **Account → Cloudflare Pages → Edit** if you ever re-enable Actions-based deploys.
 
 CI always runs unit tests, production build, the **25 MiB asset gate**, and Playwright e2e.
 
