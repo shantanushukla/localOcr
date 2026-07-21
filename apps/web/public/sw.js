@@ -4,7 +4,8 @@
    - CDN models: cache-first for offline OCR after first load
 */
 
-const CACHE = 'localocr-shell-v3';
+// Bump on every release that must invalidate old shell/asset caches
+const CACHE = 'localocr-shell-v4';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());

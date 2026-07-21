@@ -220,10 +220,35 @@ export function App() {
     [engineChoice, language, preprocess, deskew, ensureEngine, persistJob],
   );
 
+  /** Prefer in-memory page canvas; rebuild from preview if the map was lost. */
+  const getPageCanvas = useCallback(async (index: number): Promise<HTMLCanvasElement | null> => {
+    const cached = canvasSources.current.get(index);
+    if (cached && cached.width > 0 && cached.height > 0) return cached;
+
+    const preview = job?.pages[index]?.previewUrl;
+    if (!preview) return null;
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = preview;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || job?.pages[index]?.width || 1;
+      canvas.height = img.naturalHeight || job?.pages[index]?.height || 1;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0);
+      canvasSources.current.set(index, canvas);
+      return canvas;
+    } catch {
+      return null;
+    }
+  }, [job]);
+
   const runRegionOcr = useCallback(async () => {
     const activeRegion = regionRef.current ?? region;
     if (!activeRegion || !job) return;
-    const src = canvasSources.current.get(pageIndex);
+    const src = await getPageCanvas(pageIndex);
     if (!src) {
       setError('Page canvas unavailable for region OCR. Re-open the file and try again.');
       return;
@@ -259,13 +284,21 @@ export function App() {
           : 'Recognizing region with Tesseract…',
       );
 
-      // Pass HTMLCanvasElement — Tesseract.js cannot read raw ImageData
-      // ("Error attempting to read image."). Paddle engine accepts canvas too
-      // and converts to ImageBitmap/ImageData inside the worker path.
+      // Tesseract: PNG data URL (canvas/ImageData break loadImage → "Error attempting to read image.")
+      // Paddle: HTMLCanvasElement on main thread
+      let imagePayload: HTMLCanvasElement | string = crop;
+      if (engineChoice === 'tesseract') {
+        try {
+          imagePayload = crop.toDataURL('image/png');
+        } catch {
+          imagePayload = crop;
+        }
+      }
+
       const result = await engine.recognize({
         width: crop.width,
         height: crop.height,
-        image: crop,
+        image: imagePayload,
       });
 
       // Map bboxes from upscaled crop space → page space
@@ -300,15 +333,21 @@ export function App() {
       setRegion(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(
-        engineChoice === 'paddle'
-          ? `Paddle region OCR failed: ${msg}. Try a larger selection, or switch to Tesseract.`
-          : msg,
-      );
+      if (engineChoice === 'paddle') {
+        setError(
+          `Paddle region OCR failed: ${msg}. Try a larger selection, or switch to Tesseract.`,
+        );
+      } else if (/read image/i.test(msg)) {
+        setError(
+          `${msg} Try drawing the region again, or hard-refresh the page (Cmd/Ctrl+Shift+R) to clear a stale cache.`,
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
-  }, [region, job, pageIndex, engineChoice, language, ensureEngine]);
+  }, [region, job, pageIndex, engineChoice, language, ensureEngine, getPageCanvas]);
 
   const onCancel = () => {
     runGeneration.current += 1;
