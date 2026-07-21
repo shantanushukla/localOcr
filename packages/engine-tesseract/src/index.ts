@@ -10,6 +10,66 @@ import { tesseractBboxToOurs, tesseractConfidence } from './bbox.js';
 
 export { tesseractBboxToOurs, tesseractConfidence } from './bbox.js';
 
+/**
+ * Tesseract.js only accepts encoded images / canvas / img / File / Blob —
+ * not raw ImageData or ImageBitmap. Normalize so callers (e.g. region OCR)
+ * never hit "Error attempting to read image."
+ */
+export function toTesseractImage(
+  image: OcrPageInput['image'],
+  width: number,
+  height: number,
+): HTMLCanvasElement | HTMLImageElement | Blob | File | string {
+  if (typeof image === 'string') return image;
+  if (typeof File !== 'undefined' && image instanceof File) return image;
+  if (typeof Blob !== 'undefined' && image instanceof Blob) return image;
+  if (typeof HTMLCanvasElement !== 'undefined' && image instanceof HTMLCanvasElement) {
+    return image;
+  }
+  if (typeof HTMLImageElement !== 'undefined' && image instanceof HTMLImageElement) {
+    return image;
+  }
+  if (typeof OffscreenCanvas !== 'undefined' && image instanceof OffscreenCanvas) {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width || width;
+    canvas.height = image.height || height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D unavailable for OffscreenCanvas convert');
+    ctx.drawImage(image, 0, 0);
+    return canvas;
+  }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D unavailable for Tesseract image convert');
+
+  if (typeof ImageData !== 'undefined' && image instanceof ImageData) {
+    canvas.width = image.width || width;
+    canvas.height = image.height || height;
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) {
+    canvas.width = image.width || width;
+    canvas.height = image.height || height;
+    ctx.drawImage(image, 0, 0);
+    return canvas;
+  }
+
+  // Last resort: try as CanvasImageSource
+  const src = image as CanvasImageSource & {
+    width?: number;
+    height?: number;
+    naturalWidth?: number;
+    naturalHeight?: number;
+  };
+  canvas.width = src.naturalWidth ?? src.width ?? width;
+  canvas.height = src.naturalHeight ?? src.height ?? height;
+  ctx.drawImage(src, 0, 0);
+  return canvas;
+}
+
 export class TesseractEngine implements OcrEngine {
   readonly id = 'tesseract.js';
   readonly capabilities = {
@@ -48,7 +108,9 @@ export class TesseractEngine implements OcrEngine {
     input.signal?.addEventListener('abort', onAbort);
 
     try {
-      const image = input.image as Parameters<Worker['recognize']>[0];
+      const image = toTesseractImage(input.image, input.width, input.height) as Parameters<
+        Worker['recognize']
+      >[0];
       const { data } = await worker.recognize(image, undefined, {
         text: true,
         blocks: true,

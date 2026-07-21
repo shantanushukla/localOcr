@@ -259,17 +259,13 @@ export function App() {
           : 'Recognizing region with Tesseract…',
       );
 
-      // Prefer ImageData for worker transfer reliability (esp. Paddle)
-      const ctx = crop.getContext('2d');
-      const imagePayload =
-        ctx != null
-          ? ctx.getImageData(0, 0, crop.width, crop.height)
-          : crop;
-
+      // Pass HTMLCanvasElement — Tesseract.js cannot read raw ImageData
+      // ("Error attempting to read image."). Paddle engine accepts canvas too
+      // and converts to ImageBitmap/ImageData inside the worker path.
       const result = await engine.recognize({
         width: crop.width,
         height: crop.height,
-        image: imagePayload,
+        image: crop,
       });
 
       // Map bboxes from upscaled crop space → page space
@@ -518,8 +514,12 @@ export function App() {
                 onChange={(e) => {
                   const next = e.target.value as EngineChoice;
                   setEngineChoice(next);
-                  void engineRef.current?.dispose();
+                  // Tear down previous engine so region OCR loads the newly selected one
+                  const prev = engineRef.current;
                   engineRef.current = null;
+                  void prev?.dispose().catch(() => {
+                    /* ignore dispose races */
+                  });
                 }}
                 aria-label="OCR engine"
                 title={`${engineLabel} — region OCR and new runs use this engine`}
@@ -1062,6 +1062,7 @@ export function App() {
                     onClick={() => setRegionMode((v) => !v)}
                     title="Region OCR"
                     aria-label="Region OCR"
+                    data-testid="tool-region"
                   >
                     ▭
                   </button>
@@ -1072,6 +1073,7 @@ export function App() {
                       style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
                       disabled={busy}
                       onClick={() => void runRegionOcr()}
+                      data-testid="ocr-selection"
                     >
                       OCR selection
                     </button>
@@ -1099,6 +1101,7 @@ export function App() {
                   <div
                     className="doc-stage"
                     ref={stageRef}
+                    data-testid="doc-stage"
                     onPointerDown={(e) => {
                       if (!regionMode) return;
                       e.preventDefault();
@@ -1176,15 +1179,24 @@ export function App() {
                   </div>
                 )}
               </div>
-              <div className="ws-status">
-                <span>
-                  {busy && job
-                    ? `Page ${Math.min(doneCount + 1, job.pages.length)} of ${job.pages.length} · processing`
-                    : busy
-                      ? status || 'Processing…'
-                      : page?.result && job
+              <div className="ws-status" data-testid="ws-status">
+                <span data-testid="ws-status-text">
+                  {(() => {
+                    if (busy && job) {
+                      return (
+                        status ||
+                        `Page ${Math.min(doneCount + 1, job.pages.length)} of ${job.pages.length} · processing`
+                      );
+                    }
+                    if (busy) return status || 'Processing…';
+                    const pageLine =
+                      page?.result && job
                         ? `Page ${pageIndex + 1} of ${job.pages.length} · ${page.result.engineId} · ${page.result.durationMs}ms`
-                        : status || page?.status || ''}
+                        : '';
+                    // Prefer explicit status (e.g. "Region OCR complete.") so users/tests see it
+                    if (status && pageLine) return `${status} · ${pageLine}`;
+                    return status || pageLine || page?.status || '';
+                  })()}
                 </span>
                 <div
                   className="progress"

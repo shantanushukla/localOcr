@@ -4,50 +4,77 @@ import type {
   OcrPageInput,
   OcrPageResult,
 } from '@localocr/ocr-core';
-import type { WorkerRequest, WorkerResponse } from './worker.js';
+import { paddleItemsToBlocks } from './normalize.js';
 
 export { paddleItemsToBlocks } from './normalize.js';
 
+type PaddleService = {
+  initialize: () => Promise<void>;
+  destroy: () => Promise<void>;
+  recognize: (
+    image: unknown,
+    opts?: { flatten?: boolean },
+  ) => Promise<{
+    text: string;
+    confidence: number;
+    results?: Array<{
+      text: string;
+      confidence: number;
+      box: { x: number; y: number; width: number; height: number };
+    }>;
+    lines?: Array<
+      Array<{
+        text: string;
+        confidence: number;
+        box: { x: number; y: number; width: number; height: number };
+      }>
+    >;
+  }>;
+};
+
 /**
- * Convert page image input to ImageBitmap (preferred) or ImageData for the worker.
+ * Draw any supported page input onto an HTMLCanvasElement for ppu-paddle-ocr.
+ *
+ * Runs on the main thread: the web build of ppu-paddle-ocr uses
+ * document.createElement('canvas') / HTMLCanvasElement and is not worker-safe.
  */
-async function toTransferable(
+export async function toHtmlCanvas(
   image: OcrPageInput['image'],
   width: number,
   height: number,
-): Promise<
-  | { kind: 'bitmap'; bitmap: ImageBitmap; width: number; height: number }
-  | {
-      kind: 'imageData';
-      imageData: { data: Uint8ClampedArray; width: number; height: number };
-      width: number;
-      height: number;
-    }
-> {
-  if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) {
-    return { kind: 'bitmap', bitmap: image, width: image.width || width, height: image.height || height };
+): Promise<HTMLCanvasElement> {
+  if (typeof HTMLCanvasElement !== 'undefined' && image instanceof HTMLCanvasElement) {
+    return image;
   }
 
-  // Build a canvas, then transfer as ImageBitmap when possible
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D unavailable');
 
-  if (image instanceof ImageData) {
+  if (typeof ImageData !== 'undefined' && image instanceof ImageData) {
     canvas.width = image.width || width;
     canvas.height = image.height || height;
     ctx.putImageData(image, 0, 0);
-  } else if (typeof HTMLCanvasElement !== 'undefined' && image instanceof HTMLCanvasElement) {
+    return canvas;
+  }
+
+  if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) {
     canvas.width = image.width || width;
     canvas.height = image.height || height;
     ctx.drawImage(image, 0, 0);
-  } else if (typeof OffscreenCanvas !== 'undefined' && image instanceof OffscreenCanvas) {
+    return canvas;
+  }
+
+  if (typeof OffscreenCanvas !== 'undefined' && image instanceof OffscreenCanvas) {
     canvas.width = image.width || width;
     canvas.height = image.height || height;
     ctx.drawImage(image, 0, 0);
-  } else if (typeof image === 'string') {
+    return canvas;
+  }
+
+  if (typeof image === 'string') {
     const img = new Image();
     img.decoding = 'async';
     img.src = image;
@@ -55,7 +82,10 @@ async function toTransferable(
     canvas.width = img.naturalWidth || width;
     canvas.height = img.naturalHeight || height;
     ctx.drawImage(img, 0, 0);
-  } else if (image instanceof Blob) {
+    return canvas;
+  }
+
+  if (typeof Blob !== 'undefined' && image instanceof Blob) {
     const url = URL.createObjectURL(image);
     try {
       const img = new Image();
@@ -64,48 +94,26 @@ async function toTransferable(
       canvas.width = img.naturalWidth || width;
       canvas.height = img.naturalHeight || height;
       ctx.drawImage(img, 0, 0);
+      return canvas;
     } finally {
       URL.revokeObjectURL(url);
     }
-  } else {
-    const src = image as CanvasImageSource & {
-      width?: number;
-      height?: number;
-      naturalWidth?: number;
-      naturalHeight?: number;
-    };
-    const w = src.naturalWidth ?? src.width ?? width;
-    const h = src.naturalHeight ?? src.height ?? height;
-    canvas.width = w || width;
-    canvas.height = h || height;
-    ctx.drawImage(src, 0, 0);
   }
 
-  if (typeof createImageBitmap === 'function') {
-    const bitmap = await createImageBitmap(canvas);
-    return {
-      kind: 'bitmap',
-      bitmap,
-      width: canvas.width,
-      height: canvas.height,
-    };
-  }
-
-  const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  return {
-    kind: 'imageData',
-    imageData: {
-      data: id.data,
-      width: id.width,
-      height: id.height,
-    },
-    width: canvas.width,
-    height: canvas.height,
+  const src = image as CanvasImageSource & {
+    width?: number;
+    height?: number;
+    naturalWidth?: number;
+    naturalHeight?: number;
   };
+  canvas.width = src.naturalWidth ?? src.width ?? width;
+  canvas.height = src.naturalHeight ?? src.height ?? height;
+  ctx.drawImage(src, 0, 0);
+  return canvas;
 }
 
 /**
- * Main-thread proxy: all heavy Paddle/ORT work runs in a dedicated Web Worker.
+ * Paddle OCR on the main thread (DOM canvas required by ppu-paddle-ocr/web).
  */
 export class PaddleEngine implements OcrEngine {
   readonly id = 'ppu-paddle-ocr';
@@ -116,118 +124,77 @@ export class PaddleEngine implements OcrEngine {
     confidence: true,
   };
 
-  private worker: Worker | null = null;
-  private seq = 0;
-  private pending = new Map<
-    number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
+  private service: PaddleService | null = null;
   private preferWebGpu = true;
   private baseUrl?: string;
   private ready = false;
 
-  private nextId(): number {
-    this.seq += 1;
-    return this.seq;
-  }
-
-  private call(msg: WorkerRequest, transfer: Transferable[] = []): Promise<unknown> {
-    if (!this.worker) return Promise.reject(new Error('Paddle worker not started'));
-    return new Promise((resolve, reject) => {
-      this.pending.set(msg.id, { resolve, reject });
-      this.worker!.postMessage(msg, transfer);
-    });
-  }
-
-  private ensureWorker(): Worker {
-    if (this.worker) return this.worker;
-    // Vite resolves ?worker&url / new Worker(new URL(...), { type: 'module' })
-    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    this.worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
-      const res = ev.data;
-      const p = this.pending.get(res.id);
-      if (!p) return;
-      this.pending.delete(res.id);
-      if (res.type === 'error') p.reject(new Error(res.message));
-      else p.resolve(res.payload);
-    };
-    this.worker.onerror = (ev) => {
-      for (const [, p] of this.pending) {
-        p.reject(new Error(ev.message || 'Paddle worker error'));
-      }
-      this.pending.clear();
-    };
-    return this.worker;
-  }
-
   async init(opts: EngineInitOptions = {}): Promise<void> {
     this.preferWebGpu = opts.preferWebGpu !== false;
     this.baseUrl = opts.baseUrl;
-    if (this.ready) return;
-    this.ensureWorker();
-    await this.call({
-      id: this.nextId(),
-      type: 'init',
-      preferWebGpu: this.preferWebGpu,
-      baseUrl: this.baseUrl,
-    });
+    if (this.ready && this.service) return;
+
+    const ort = await import('onnxruntime-web');
+    const env = (ort as { env?: { wasm?: { wasmPaths?: string } } }).env;
+    if (env?.wasm) {
+      env.wasm.wasmPaths =
+        this.baseUrl?.replace(/\/?$/, '/') ??
+        'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+    }
+
+    const mod = await import('ppu-paddle-ocr/web');
+    const PaddleOcrService = (
+      mod as { PaddleOcrService: new (o?: unknown) => PaddleService }
+    ).PaddleOcrService;
+
+    const session = this.preferWebGpu
+      ? undefined
+      : { executionProviders: ['wasm'] as const, graphOptimizationLevel: 'all' as const };
+
+    this.service = new PaddleOcrService(session ? { session } : undefined);
+    await this.service.initialize();
     this.ready = true;
   }
 
   async recognize(input: OcrPageInput): Promise<OcrPageResult> {
-    if (!this.ready) await this.init();
+    if (!this.ready || !this.service) await this.init();
+    if (!this.service) throw new Error('Paddle OCR failed to initialize');
     if (input.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    const transferred = await toTransferable(input.image, input.width, input.height);
-    const id = this.nextId();
+    const canvas = await toHtmlCanvas(input.image, input.width, input.height);
+    const t0 = performance.now();
+    const result = await this.service.recognize(canvas, { flatten: true });
 
-    const onAbort = () => {
-      /* mid-recognize abort: worker finishes; we discard if aborted after */
+    if (input.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const items = result.results ?? result.lines?.flat() ?? [];
+    const blocks = paddleItemsToBlocks(items);
+    const fullText =
+      result.text?.trim() ||
+      blocks
+        .map((b) => b.text)
+        .filter(Boolean)
+        .join('\n');
+
+    return {
+      blocks,
+      fullText,
+      engineId: this.id,
+      durationMs: Math.round(performance.now() - t0),
+      route: 'ocr',
     };
-    input.signal?.addEventListener('abort', onAbort);
-
-    try {
-      let result: OcrPageResult;
-      if (transferred.kind === 'bitmap') {
-        result = (await this.call(
-          {
-            id,
-            type: 'recognize',
-            width: transferred.width,
-            height: transferred.height,
-            bitmap: transferred.bitmap,
-          },
-          [transferred.bitmap],
-        )) as OcrPageResult;
-      } else {
-        result = (await this.call({
-          id,
-          type: 'recognize',
-          width: transferred.width,
-          height: transferred.height,
-          imageData: transferred.imageData,
-        })) as OcrPageResult;
-      }
-
-      if (input.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      return result;
-    } finally {
-      input.signal?.removeEventListener('abort', onAbort);
-    }
   }
 
   async dispose(): Promise<void> {
-    if (this.worker) {
+    if (this.service) {
       try {
-        await this.call({ id: this.nextId(), type: 'dispose' });
+        await this.service.destroy();
       } catch {
         /* ignore */
       }
-      this.worker.terminate();
-      this.worker = null;
+      this.service = null;
     }
     this.ready = false;
-    this.pending.clear();
   }
 }
 
