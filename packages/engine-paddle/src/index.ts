@@ -36,9 +36,17 @@ async function toTransferable(
   if (!ctx) throw new Error('Canvas 2D unavailable');
 
   if (image instanceof ImageData) {
-    canvas.width = image.width;
-    canvas.height = image.height;
+    canvas.width = image.width || width;
+    canvas.height = image.height || height;
     ctx.putImageData(image, 0, 0);
+  } else if (typeof HTMLCanvasElement !== 'undefined' && image instanceof HTMLCanvasElement) {
+    canvas.width = image.width || width;
+    canvas.height = image.height || height;
+    ctx.drawImage(image, 0, 0);
+  } else if (typeof OffscreenCanvas !== 'undefined' && image instanceof OffscreenCanvas) {
+    canvas.width = image.width || width;
+    canvas.height = image.height || height;
+    ctx.drawImage(image, 0, 0);
   } else if (typeof image === 'string') {
     const img = new Image();
     img.decoding = 'async';

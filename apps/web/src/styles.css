@@ -38,6 +38,7 @@ html,
 body,
 #root {
   height: 100%;
+  overflow: hidden; /* app chrome owns scroll; panels scroll internally */
 }
 
 body {
@@ -59,9 +60,12 @@ select {
 }
 
 .app {
-  min-height: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ——— Top bar ——— */
@@ -71,6 +75,7 @@ select {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.1rem 1.75rem;
+  flex-shrink: 0;
 }
 
 .brand {
@@ -205,7 +210,9 @@ button.pill {
 
 /* ——— Landing ——— */
 .landing {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -474,18 +481,20 @@ button.pill {
 
 /* ——— Workspace ——— */
 .workspace {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0 1rem 1rem;
+  overflow: hidden;
+  padding: 0 1rem 0.5rem;
 }
 
 .ws-body {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  height: 100%;
   display: grid;
-  grid-template-columns: 200px 1fr 340px;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) minmax(240px, 340px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -499,7 +508,8 @@ button.pill {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ws-side-h {
@@ -518,6 +528,9 @@ button.pill {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 0;
 }
 
 .thumb {
@@ -585,6 +598,8 @@ button.pill {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: #f1f5f9;
 }
 
@@ -637,12 +652,15 @@ button.pill {
 }
 
 .ws-canvas-wrap {
-  flex: 1;
+  flex: 1 1 0;
   overflow: auto;
   display: grid;
   place-items: start center;
   padding: 1.25rem;
   min-height: 0;
+  min-width: 0;
+  /* isolate scroll: tall pages scroll here, not the whole app */
+  overscroll-behavior: contain;
 }
 
 .doc-stage {
@@ -654,12 +672,18 @@ button.pill {
   line-height: 0;
   touch-action: none;
   user-select: none;
+  max-width: 100%;
+  width: max-content;
 }
 
+.doc-stage-img,
 .doc-stage img {
   max-width: 100%;
+  width: auto;
   height: auto;
   display: block;
+  /* prevent intrinsic page width from forcing the app wider than the viewport */
+  max-height: none;
 }
 
 .bbox-layer {
@@ -716,6 +740,8 @@ button.pill {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   background: var(--color-surface);
 }
 
@@ -744,12 +770,19 @@ button.pill {
 }
 
 .result-scroll {
-  flex: 1;
+  flex: 1 1 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 0.85rem 1rem;
   font-size: 0.88rem;
   line-height: 1.55;
   min-height: 0;
+}
+
+.result-scroll .export-pre {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .result-line {
@@ -801,19 +834,21 @@ button.pill {
 
 /* ——— Export view ——— */
 .export-view {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0 1.75rem 1.5rem;
+  overflow: hidden;
+  padding: 0 1.75rem 0.75rem;
 }
 
 .export-main {
-  flex: 1;
+  flex: 1 1 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.25rem;
   min-height: 0;
+  overflow: hidden;
 }
 
 .panel {
@@ -824,7 +859,10 @@ button.pill {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+  height: 100%;
+  max-height: 100%;
 }
 
 .panel-h {
@@ -844,12 +882,20 @@ button.pill {
 }
 
 .panel-body {
-  flex: 1;
+  flex: 1 1 0;
   padding: 1.1rem 1.15rem;
   overflow: auto;
+  overscroll-behavior: contain;
   font-size: 0.88rem;
   line-height: 1.6;
   min-height: 0;
+}
+
+.panel-body .export-pre {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .panel-body.mono {
@@ -857,14 +903,60 @@ button.pill {
   font-size: 0.75rem;
   background: var(--color-output-bg);
   color: #312e81;
+  overflow: auto;
+  overscroll-behavior: contain;
   white-space: pre-wrap;
 }
 
 .export-actions {
   display: flex;
   gap: 0.5rem;
-  padding-top: 1.25rem;
+  padding-top: 0.85rem;
   flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.engine-hint {
+  margin: 0.65rem 0 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.engine-guide section {
+  margin-bottom: 1.1rem;
+}
+
+.engine-guide h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+}
+
+.engine-guide p {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.engine-guide ul {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.engine-guide li {
+  margin-bottom: 0.35rem;
+}
+
+.engine-guide strong {
+  color: var(--color-text);
 }
 
 .export-meta {
@@ -961,11 +1053,12 @@ button.pill {
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-lg);
-  max-width: 480px;
+  max-width: 520px;
   width: 100%;
-  max-height: min(80vh, 560px);
+  max-height: min(85vh, 640px);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .modal-h {
@@ -974,6 +1067,7 @@ button.pill {
   align-items: center;
   padding: 0.9rem 1.1rem;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .modal-h h2 {
@@ -985,8 +1079,10 @@ button.pill {
 .modal-body {
   padding: 1rem 1.15rem 1.25rem;
   overflow: auto;
+  overscroll-behavior: contain;
   font-size: 0.92rem;
   line-height: 1.55;
+  min-height: 0;
 }
 
 .modal-body ol {
@@ -1004,7 +1100,6 @@ button.pill {
   border-top: 1px solid var(--color-border);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(10px);
-  margin-top: auto;
 }
 
 .site-footer-inner {

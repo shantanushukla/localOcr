@@ -21,7 +21,7 @@ import { isImageFile, isPdfFile } from './file-types';
 type EngineChoice = 'tesseract' | 'paddle';
 type View = 'landing' | 'workspace' | 'export';
 type ResultTab = 'text' | 'markdown' | 'json';
-type Panel = null | 'how' | 'privacy' | 'terms' | 'about';
+type Panel = null | 'how' | 'privacy' | 'terms' | 'about' | 'engines';
 
 const LANGS = [
   { code: 'eng', label: 'English' },
@@ -34,12 +34,33 @@ const LANGS = [
   { code: 'jpn', label: 'Japanese' },
 ];
 
+/** Paddle det models struggle on tiny crops — upscale so recognition can run. */
+const REGION_MIN_SIDE = 64;
+
 async function createEngine(choice: EngineChoice): Promise<OcrEngine> {
   if (choice === 'paddle') {
     const { createPaddleEngine } = await import('@localocr/engine-paddle');
     return createPaddleEngine();
   }
   return createTesseractEngine();
+}
+
+/** Upscale a crop canvas when too small for detection models; returns scale applied. */
+function prepareRegionCrop(source: HTMLCanvasElement): { canvas: HTMLCanvasElement; scale: number } {
+  const minSide = Math.min(source.width, source.height);
+  if (minSide >= REGION_MIN_SIDE) {
+    return { canvas: source, scale: 1 };
+  }
+  const scale = REGION_MIN_SIDE / Math.max(minSide, 1);
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(source.width * scale));
+  out.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = out.getContext('2d');
+  if (!ctx) return { canvas: source, scale: 1 };
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, out.width, out.height);
+  return { canvas: out, scale };
 }
 
 export function App() {
@@ -63,7 +84,6 @@ export function App() {
   const [region, setRegion] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(
     null,
   );
-  const [drawing, setDrawing] = useState(false);
   const [showBoxes, setShowBoxes] = useState(true);
   const [showConf, setShowConf] = useState(true);
 
@@ -73,6 +93,9 @@ export function App() {
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasSources = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const runGeneration = useRef(0);
+  /** Refs so region drag works without waiting for React re-render mid-gesture. */
+  const drawingRef = useRef(false);
+  const regionRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   const page = job?.pages[pageIndex];
   const blocks: OcrBlock[] = page?.result?.blocks ?? [];
@@ -198,34 +221,69 @@ export function App() {
   );
 
   const runRegionOcr = useCallback(async () => {
-    if (!region || !job) return;
+    const activeRegion = regionRef.current ?? region;
+    if (!activeRegion || !job) return;
     const src = canvasSources.current.get(pageIndex);
     if (!src) {
-      setError('Page canvas unavailable for region OCR');
+      setError('Page canvas unavailable for region OCR. Re-open the file and try again.');
       return;
     }
-    const x = Math.min(region.x0, region.x1);
-    const y = Math.min(region.y0, region.y1);
-    const w = Math.abs(region.x1 - region.x0);
-    const h = Math.abs(region.y1 - region.y0);
-    if (w < 4 || h < 4) return;
+    const x = Math.min(activeRegion.x0, activeRegion.x1);
+    const y = Math.min(activeRegion.y0, activeRegion.y1);
+    const w = Math.abs(activeRegion.x1 - activeRegion.x0);
+    const h = Math.abs(activeRegion.y1 - activeRegion.y0);
+    if (w < 4 || h < 4) {
+      setError('Draw a larger region, then click OCR selection.');
+      return;
+    }
+
+    // Clamp to source canvas bounds
+    const cx = Math.max(0, Math.min(Math.floor(x), src.width - 1));
+    const cy = Math.max(0, Math.min(Math.floor(y), src.height - 1));
+    const cw = Math.max(1, Math.min(Math.ceil(w), src.width - cx));
+    const ch = Math.max(1, Math.min(Math.ceil(h), src.height - cy));
 
     setBusy(true);
     setError(null);
     try {
       await ensureEngine(engineChoice, language);
-      const crop = cropCanvas(src, { x, y, w, h });
-      setStatus('Recognizing region…');
-      const result = await engineRef.current!.recognize({
+      const engine = engineRef.current;
+      if (!engine) throw new Error('OCR engine failed to load');
+
+      const rawCrop = cropCanvas(src, { x: cx, y: cy, w: cw, h: ch });
+      // Paddle (and small Tesseract crops) benefit from a minimum side length
+      const { canvas: crop, scale } = prepareRegionCrop(rawCrop);
+      setStatus(
+        engineChoice === 'paddle'
+          ? 'Recognizing region with Paddle ONNX…'
+          : 'Recognizing region with Tesseract…',
+      );
+
+      // Prefer ImageData for worker transfer reliability (esp. Paddle)
+      const ctx = crop.getContext('2d');
+      const imagePayload =
+        ctx != null
+          ? ctx.getImageData(0, 0, crop.width, crop.height)
+          : crop;
+
+      const result = await engine.recognize({
         width: crop.width,
         height: crop.height,
-        image: crop,
+        image: imagePayload,
       });
-      // Offset bboxes back into page space
+
+      // Map bboxes from upscaled crop space → page space
+      const inv = scale !== 0 ? 1 / scale : 1;
       const offsetBlocks = result.blocks.map((b) => ({
         ...b,
-        bbox: { ...b.bbox, x: b.bbox.x + x, y: b.bbox.y + y },
+        bbox: {
+          x: b.bbox.x * inv + cx,
+          y: b.bbox.y * inv + cy,
+          w: b.bbox.w * inv,
+          h: b.bbox.h * inv,
+        },
       }));
+
       setJob((prev) => {
         if (!prev) return prev;
         const pages = [...prev.pages];
@@ -234,15 +292,23 @@ export function App() {
           ...result,
           blocks: offsetBlocks,
           fullText: result.fullText,
+          engineId: result.engineId,
         };
         p.status = 'done';
         pages[pageIndex] = p;
-        return { ...prev, pages, status: 'done' };
+        return { ...prev, pages, status: 'done', engineId: result.engineId };
       });
       setStatus('Region OCR complete.');
       setRegionMode(false);
+      regionRef.current = null;
+      setRegion(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(
+        engineChoice === 'paddle'
+          ? `Paddle region OCR failed: ${msg}. Try a larger selection, or switch to Tesseract.`
+          : msg,
+      );
     } finally {
       setBusy(false);
     }
@@ -450,15 +516,25 @@ export function App() {
                 value={engineChoice}
                 disabled={busy}
                 onChange={(e) => {
-                  setEngineChoice(e.target.value as EngineChoice);
+                  const next = e.target.value as EngineChoice;
+                  setEngineChoice(next);
+                  void engineRef.current?.dispose();
                   engineRef.current = null;
                 }}
                 aria-label="OCR engine"
-                title={engineLabel}
+                title={`${engineLabel} — region OCR and new runs use this engine`}
               >
                 <option value="tesseract">Tesseract</option>
                 <option value="paddle">Paddle ONNX</option>
               </select>
+              <button
+                type="button"
+                className="pill ghost hide-on-mobile"
+                onClick={() => setPanel('engines')}
+                title="When to use Tesseract vs Paddle"
+              >
+                Engines
+              </button>
               <span className="pill ghost hide-on-mobile" title={engineLabel}>
                 {engineLabel}
               </span>
@@ -536,11 +612,13 @@ export function App() {
               <h2 id="modal-title">
                 {panel === 'how'
                   ? 'How it works'
-                  : panel === 'privacy'
-                    ? 'Privacy'
-                    : panel === 'terms'
-                      ? 'Terms of use'
-                      : 'About us'}
+                  : panel === 'engines'
+                    ? 'OCR engines'
+                    : panel === 'privacy'
+                      ? 'Privacy'
+                      : panel === 'terms'
+                        ? 'Terms of use'
+                        : 'About us'}
               </h2>
               <button type="button" className="pill ghost" onClick={() => setPanel(null)}>
                 Close
@@ -548,12 +626,87 @@ export function App() {
             </div>
             <div className="modal-body">
               {panel === 'how' && (
-                <ol>
-                  <li>You drop a PDF or image — it never uploads to our servers.</li>
-                  <li>Digital PDFs use the embedded text layer (fast, exact).</li>
-                  <li>Scans run OCR in a local engine (Tesseract or Paddle ONNX).</li>
-                  <li>Review bounding boxes + confidence, then export TXT / MD / JSON.</li>
-                </ol>
+                <>
+                  <ol>
+                    <li>You drop a PDF or image — it never uploads to our servers.</li>
+                    <li>Digital PDFs use the embedded text layer (fast, exact).</li>
+                    <li>Scans run OCR in a local engine (Tesseract or Paddle ONNX).</li>
+                    <li>Review bounding boxes + confidence, then export TXT / MD / JSON.</li>
+                  </ol>
+                  <p className="muted small" style={{ marginTop: '1rem' }}>
+                    Need help choosing an engine?{' '}
+                    <button
+                      type="button"
+                      className="footer-link"
+                      style={{ display: 'inline', padding: 0 }}
+                      onClick={() => setPanel('engines')}
+                    >
+                      Compare Tesseract vs Paddle
+                    </button>
+                  </p>
+                </>
+              )}
+              {panel === 'engines' && (
+                <div className="engine-guide">
+                  <section>
+                    <h3>Tesseract (default)</h3>
+                    <p>
+                      Classic open-source OCR via <code>tesseract.js</code>. Best default for most
+                      documents: printed invoices, letters, screenshots, and multi-language packs
+                      you can pick explicitly.
+                    </p>
+                    <ul>
+                      <li>
+                        <strong>Use when:</strong> you need a specific language pack, stable line
+                        boxes, or lighter first-run downloads.
+                      </li>
+                      <li>
+                        <strong>Strengths:</strong> many languages, predictable behavior, good on
+                        clean scans and digital-looking pages.
+                      </li>
+                      <li>
+                        <strong>Trade-offs:</strong> can struggle on heavy noise, odd layouts, or
+                        dense multi-column tables; runs on CPU/WASM (no WebGPU).
+                      </li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h3>Paddle ONNX</h3>
+                    <p>
+                      Detection + recognition models from PaddleOCR, run with ONNX Runtime in a
+                      Web Worker. Prefers <strong>WebGPU</strong> when available, otherwise WASM.
+                    </p>
+                    <ul>
+                      <li>
+                        <strong>Use when:</strong> complex layouts, mixed scripts, or you want
+                        GPU-accelerated recognition on supported browsers.
+                      </li>
+                      <li>
+                        <strong>Strengths:</strong> often stronger detection on photos and messy
+                        scans; worker keeps the UI responsive.
+                      </li>
+                      <li>
+                        <strong>Trade-offs:</strong> larger model download on first use; language
+                        is multi/bundled (no per-pack selector); first load is slower.
+                      </li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h3>Digital PDF path</h3>
+                    <p>
+                      Neither engine is needed when a PDF already has a text layer — we extract it
+                      instantly for perfect fidelity. Scanned PDF pages still go through the
+                      selected OCR engine.
+                    </p>
+                  </section>
+                  <section>
+                    <h3>Region OCR tip</h3>
+                    <p>
+                      Use the ▭ tool, drag a box on the page, then <strong>OCR selection</strong>.
+                      Works with both engines; small boxes are upscaled automatically for Paddle.
+                    </p>
+                  </section>
+                </div>
               )}
               {panel === 'privacy' && (
                 <>
@@ -707,12 +860,13 @@ export function App() {
                   disabled={busy}
                   onChange={(e) => {
                     setEngineChoice(e.target.value as EngineChoice);
+                    void engineRef.current?.dispose();
                     engineRef.current = null;
                   }}
                   aria-label="OCR engine"
                 >
-                  <option value="tesseract">Tesseract</option>
-                  <option value="paddle">Paddle ONNX</option>
+                  <option value="tesseract">Tesseract — general docs</option>
+                  <option value="paddle">Paddle ONNX — complex / GPU</option>
                 </select>
               </label>
               <label className="toggle-row">
@@ -723,9 +877,15 @@ export function App() {
                   disabled={busy || engineChoice === 'paddle'}
                   onChange={(e) => {
                     setLanguage(e.target.value);
+                    void engineRef.current?.dispose();
                     engineRef.current = null;
                   }}
                   aria-label="Language"
+                  title={
+                    engineChoice === 'paddle'
+                      ? 'Paddle uses bundled multi-language models'
+                      : 'Tesseract language pack'
+                  }
                 >
                   {LANGS.map((l) => (
                     <option key={l.code} value={l.code}>
@@ -750,7 +910,19 @@ export function App() {
                 />
                 Auto-deskew
               </label>
+              <button
+                type="button"
+                className="footer-link"
+                onClick={() => setPanel('engines')}
+              >
+                Which engine?
+              </button>
             </div>
+            <p className="engine-hint hide-on-mobile">
+              {engineChoice === 'paddle'
+                ? 'Paddle ONNX: better on complex layouts & photos; WebGPU when available; larger first download.'
+                : 'Tesseract: solid default for clean scans & multi-language packs; lighter first load.'}
+            </p>
             <input
               ref={fileInputRef}
               type="file"
@@ -929,22 +1101,40 @@ export function App() {
                     ref={stageRef}
                     onPointerDown={(e) => {
                       if (!regionMode) return;
+                      e.preventDefault();
+                      // Capture on the stage (not the img) so move/up stay on this element
+                      e.currentTarget.setPointerCapture(e.pointerId);
                       const p = pointerToImage(e.clientX, e.clientY);
-                      setDrawing(true);
-                      setRegion({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
-                      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                      const next = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+                      drawingRef.current = true;
+                      regionRef.current = next;
+                      setRegion(next);
                     }}
                     onPointerMove={(e) => {
-                      if (!drawing || !region) return;
+                      if (!drawingRef.current) return;
+                      const prev = regionRef.current;
+                      if (!prev) return;
                       const p = pointerToImage(e.clientX, e.clientY);
-                      setRegion({ ...region, x1: p.x, y1: p.y });
+                      const next = { ...prev, x1: p.x, y1: p.y };
+                      regionRef.current = next;
+                      setRegion(next);
                     }}
-                    onPointerUp={() => setDrawing(false)}
+                    onPointerUp={(e) => {
+                      drawingRef.current = false;
+                      try {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      } catch {
+                        /* already released */
+                      }
+                    }}
+                    onPointerCancel={() => {
+                      drawingRef.current = false;
+                    }}
                   >
                     <img
                       src={page.previewUrl}
                       alt={`Document page ${pageIndex + 1}`}
-                      style={{ width: page.width, maxWidth: '100%' }}
+                      className="doc-stage-img"
                       draggable={false}
                     />
                     <div className="bbox-layer">
